@@ -122,3 +122,37 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Mushaf page typography ─────────────────────────────────────────── */
+.mushaf-page-text {
+  /* Justified Arabic text needs special handling */
+  text-justify: inter-word;
+  /* Force ligatures and proper Arabic shaping */
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  /* Optimize for Arabic */
+  font-variant-ligatures: contextual;
+  /* Prevent breaking inside an ayah */
+  text-wrap: pretty;
+}
+
+/* Make the mushaf font heavier for better readability at large size */
+.mushaf-page-text {
+  font-weight: 400;
+}
+
+/* Larger font on tablets/desktop for proper mushaf feel */
+@media (min-width: 768px) {
+  .mushaf-page-text {
+    font-size: 2rem !important;
+    line-height: 2.8 !important;
+    word-spacing: 0.55em !important;
+  }
+}
+
+/* Even larger on big screens */
+@media (min-width: 1280px) {
+  .mushaf-page-text {
+    font-size: 2.25rem !important;
+    line-height: 3 !important;
+  }
+}

@@ -31,6 +31,7 @@ export type FontSize = "sm" | "md" | "lg" | "xl" | "2xl";
 export interface SettingsState {
   // Display
   theme: ThemeId;
+  mushafTheme: "light" | "dark";
   arabicFont: ArabicFontId;
   arabicFontSize: FontSize;
   translationFontSize: FontSize;
@@ -60,6 +61,7 @@ export interface SettingsState {
 
   // Actions
   setTheme: (theme: ThemeId) => void;
+  setMushafTheme: (theme: "light" | "dark") => void;
   setArabicFont: (font: ArabicFontId) => void;
   setArabicFontSize: (size: FontSize) => void;
   setTranslationFontSize: (size: FontSize) => void;
@@ -85,6 +87,7 @@ export interface SettingsState {
 
 const DEFAULTS = {
   theme: "dark" as ThemeId,
+  mushafTheme: "dark" as "light" | "dark",
   arabicFont: "uthmanic" as ArabicFontId,
   arabicFontSize: "xl" as FontSize,
   translationFontSize: "md" as FontSize,
@@ -113,6 +116,7 @@ export const useSettingsStore = create<SettingsState>()(
       ...DEFAULTS,
 
       setTheme: (theme) => set({ theme }),
+      setMushafTheme: (mushafTheme) => set({ mushafTheme }),
       setArabicFont: (arabicFont) => set({ arabicFont }),
       setArabicFontSize: (arabicFontSize) => set({ arabicFontSize }),
       setTranslationFontSize: (translationFontSize) => set({ translationFontSize }),
@@ -138,6 +142,7 @@ export const useSettingsStore = create<SettingsState>()(
       // Only persist user-changed settings, not actions
       partialize: (state) => ({
         theme: state.theme,
+        mushafTheme: state.mushafTheme,
         arabicFont: state.arabicFont,
         arabicFontSize: state.arabicFontSize,
         translationFontSize: state.translationFontSize,
