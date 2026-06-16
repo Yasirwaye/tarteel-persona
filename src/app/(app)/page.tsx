@@ -1,6 +1,7 @@
 // src/app/(app)/page.tsx
 "use client";
 
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -54,7 +55,13 @@ export default function HomePage() {
   const memorizationPages = useMemorizationStore((s) => s.pages);
   const reflections = useReflectionsStore((s) => s.reflections);
 
-  const heatmap = useActivityStore((s) => s.getHeatmap(7)); // last 7 days
+  // Subscribe to raw activities array (stable reference unless data changes)
+  const activities = useActivityStore((s) => s.activities);
+  // Calculate heatmap derived data with memo — recomputed only when activities change
+  const heatmap = useMemo(
+    () => useActivityStore.getState().getHeatmap(7),
+    [activities]
+  );
 
   // ── Derived stats ─────────────────────────────────────────────────
   const memorizedCount = Object.values(memorizationPages).filter(
@@ -69,7 +76,7 @@ export default function HomePage() {
   const reflectionCount = reflectionsList.length;
 
   // Activity in last 7 days
-  const weekActivityCount = heatmap.reduce((sum, day) => sum + day.count, 0);
+  const weekActivityCount = heatmap.reduce((sum: number, day: { count: number }) => sum + day.count, 0);
 
   // Recent surahs (fallback to first 4 if none)
   const recentSurahs =
@@ -287,8 +294,8 @@ export default function HomePage() {
               </div>
             </div>
             <div className="flex items-end gap-1.5 h-16">
-              {heatmap.map((day, i) => {
-                const maxCount = Math.max(...heatmap.map((d) => d.count), 1);
+              {heatmap.map((day: { date: string; count: number }, i: number) => {
+                const maxCount = Math.max(...heatmap.map((d: { count: number }) => d.count), 1);
                 const heightPct = (day.count / maxCount) * 100;
                 const dayLabel = new Date(day.date).toLocaleDateString("en-US", {
                   weekday: "short",
