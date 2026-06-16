@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { AlertCircle, RotateCw, Home } from "lucide-react";
+
 import Link from "next/link";
 
 export default function GlobalError({
@@ -9,7 +10,7 @@ export default function GlobalError({
   reset,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  reset: () => void;  
 }) {
   useEffect(() => {
     console.error("[App Error]", error);
