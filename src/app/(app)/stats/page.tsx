@@ -27,17 +27,32 @@ import { useNotesStore } from "@/stores/notesStore";
 const HEATMAP_DAYS = 91; // ~13 weeks
 
 export default function StatsPage() {
-  const { getHeatmap } = useActivityStore();
-  const recitationStats = useRecitationStore((s) => s.getStats());
-  const memorizationStats = useMemorizationStore((s) => s.getStats());
-  const reflectionsStreak = useReflectionsStore((s) => s.getStreak());
-  const { bookmarks } = useBookmarkStore();
-  const { notes } = useNotesStore();
+  const activitiesRaw = useActivityStore((s) => s.activities);
+  const recitationAttempts = useRecitationStore((s) => s.attempts);
+  const recitationStats = useMemo(
+    () => useRecitationStore.getState().getStats(),
+    [recitationAttempts]
+  );
+  const memorizationPages = useMemorizationStore((s) => s.pages);
+  const memorizationStats = useMemo(
+    () => useMemorizationStore.getState().getStats(),
+    [memorizationPages]
+  );
+  const reflectionsData = useReflectionsStore((s) => s.reflections);
+  const reflectionsStreak = useMemo(
+    () => useReflectionsStore.getState().getStreak(),
+    [reflectionsData]
+  );
+  const bookmarks = useBookmarkStore((s) => s.bookmarks);
+  const notes = useNotesStore((s) => s.notes);
 
-  const heatmap = useMemo(() => getHeatmap(HEATMAP_DAYS), [getHeatmap]);
-  const maxCount = Math.max(1, ...heatmap.map((d) => d.count));
+  const heatmap = useMemo(
+    () => useActivityStore.getState().getHeatmap(HEATMAP_DAYS),
+    [activitiesRaw]
+  );
+  const maxCount = Math.max(1, ...heatmap.map((d: { count: number }) => d.count));
 
-  const totalActive = heatmap.filter((d) => d.count > 0).length;
+  const totalActive = heatmap.filter((d: { count: number }) => d.count > 0).length;
   const longestStreak = useMemo(() => {
     let max = 0;
     let current = 0;
@@ -57,7 +72,7 @@ export default function StatsPage() {
     const result: { date: string; count: number }[][] = [];
     let currentWeek: { date: string; count: number }[] = [];
 
-    heatmap.forEach((day, idx) => {
+    heatmap.forEach((day: { date: string; count: number }, idx: number) => {
       currentWeek.push(day);
       if (currentWeek.length === 7 || idx === heatmap.length - 1) {
         result.push(currentWeek);
@@ -106,7 +121,7 @@ export default function StatsPage() {
         <StatCard
           icon={<Award className="w-4 h-4" />}
           label="Total Activities"
-          value={heatmap.reduce((sum, d) => sum + d.count, 0)}
+          value={heatmap.reduce((sum: number, d: { count: number }) => sum + d.count, 0)}
           subtext="last 90 days"
           color="primary"
         />
