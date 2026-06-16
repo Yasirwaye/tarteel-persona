@@ -1,7 +1,7 @@
 // src/components/audio/AudioPlayer.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -69,19 +69,10 @@ export default function AudioPlayer() {
     stop,
   } = useAudioStore();
 
-  // Default to COLLAPSED — only opens when user clicks chevron
   const [isExpanded, setIsExpanded] = useState(false);
   const [showReciters, setShowReciters] = useState(false);
   const [showSpeed, setShowSpeed] = useState(false);
   const [showSleep, setShowSleep] = useState(false);
-
-  // Auto-collapse when surah/ayah changes (new playback started)
-  useEffect(() => {
-    setIsExpanded(false);
-    setShowReciters(false);
-    setShowSpeed(false);
-    setShowSleep(false);
-  }, [currentSurahId]);
 
   if (!currentSurahId || !currentAyahNumber) return null;
 
@@ -118,79 +109,125 @@ export default function AudioPlayer() {
         "border-t border-white/[0.05]"
       )}
     >
-      {/* EXPANDED PANEL — Only renders when isExpanded === true */}
-      <AnimatePresence initial={false}>
+      {/* Expanded panel */}
+      <AnimatePresence>
         {isExpanded && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden border-b border-white/[0.04]"
+            className="px-4 md:px-6 py-4 border-b border-white/[0.04] space-y-4"
           >
-            <div className="px-4 md:px-6 py-4 space-y-4">
-              {/* Reciter selector */}
+            {/* Reciter selector */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowReciters(!showReciters);
+                  setShowSpeed(false);
+                  setShowSleep(false);
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-surface-800/60 border border-white/[0.05] hover:border-white/[0.1] transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-primary-900/40 border border-primary-700/30 flex items-center justify-center">
+                    <Mic className="w-3.5 h-3.5 text-primary-400" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-xs font-semibold text-surface-100">
+                      {reciterInfo?.name}
+                    </p>
+                    <p className="text-[10px] text-surface-500">
+                      {reciterInfo?.style}
+                    </p>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={cn(
+                    "w-4 h-4 text-surface-400 transition-transform",
+                    showReciters && "rotate-180"
+                  )}
+                />
+              </button>
+
+              <AnimatePresence>
+                {showReciters && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="absolute bottom-full left-0 right-0 mb-2 rounded-xl bg-surface-900 border border-white/[0.08] shadow-2xl overflow-hidden z-10"
+                  >
+                    {Object.values(RECITERS).map((r) => (
+                      <button
+                        key={r.id}
+                        onClick={() => {
+                          setReciter(r.id);
+                          setShowReciters(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2.5 text-left transition-all",
+                          reciter === r.id
+                            ? "bg-primary-900/40 text-primary-300"
+                            : "hover:bg-surface-800 text-surface-300"
+                        )}
+                      >
+                        <div>
+                          <p className="text-xs font-medium">{r.name}</p>
+                          <p className="text-[10px] text-surface-500">
+                            {r.style}
+                          </p>
+                        </div>
+                        <p className="font-arabic text-base text-surface-400">
+                          {r.nameArabic}
+                        </p>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Speed + Sleep + Repeat count */}
+            <div className="grid grid-cols-3 gap-2">
+              {/* Speed */}
               <div className="relative">
                 <button
                   onClick={() => {
-                    setShowReciters(!showReciters);
-                    setShowSpeed(false);
+                    setShowSpeed(!showSpeed);
+                    setShowReciters(false);
                     setShowSleep(false);
                   }}
-                  className="w-full flex items-center justify-between p-3 rounded-xl bg-surface-800/60 border border-white/[0.05] hover:border-white/[0.1] transition-all"
+                  className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-surface-800/60 border border-white/[0.05] hover:border-white/[0.1] transition-all"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-primary-900/40 border border-primary-700/30 flex items-center justify-center">
-                      <Mic className="w-3.5 h-3.5 text-primary-400" />
-                    </div>
-                    <div className="text-left">
-                      <p className="text-xs font-semibold text-surface-100">
-                        {reciterInfo?.name}
-                      </p>
-                      <p className="text-[10px] text-surface-500">
-                        {reciterInfo?.style}
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronDown
-                    className={cn(
-                      "w-4 h-4 text-surface-400 transition-transform",
-                      showReciters && "rotate-180"
-                    )}
-                  />
+                  <Gauge className="w-3.5 h-3.5 text-surface-400" />
+                  <span className="text-xs font-semibold text-surface-200">
+                    {speed}x
+                  </span>
                 </button>
 
                 <AnimatePresence>
-                  {showReciters && (
+                  {showSpeed && (
                     <motion.div
                       initial={{ opacity: 0, y: -5 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -5 }}
                       className="absolute bottom-full left-0 right-0 mb-2 rounded-xl bg-surface-900 border border-white/[0.08] shadow-2xl overflow-hidden z-10"
                     >
-                      {Object.values(RECITERS).map((r) => (
+                      {SPEED_OPTIONS.map((s) => (
                         <button
-                          key={r.id}
+                          key={s}
                           onClick={() => {
-                            setReciter(r.id);
-                            setShowReciters(false);
+                            setSpeed(s);
+                            setShowSpeed(false);
                           }}
                           className={cn(
-                            "w-full flex items-center justify-between px-3 py-2.5 text-left transition-all",
-                            reciter === r.id
+                            "w-full px-3 py-2 text-xs text-center transition-all",
+                            speed === s
                               ? "bg-primary-900/40 text-primary-300"
                               : "hover:bg-surface-800 text-surface-300"
                           )}
                         >
-                          <div>
-                            <p className="text-xs font-medium">{r.name}</p>
-                            <p className="text-[10px] text-surface-500">
-                              {r.style}
-                            </p>
-                          </div>
-                          <p className="font-arabic text-base text-surface-400">
-                            {r.nameArabic}
-                          </p>
+                          {s}x {s === 1 && "(normal)"}
                         </button>
                       ))}
                     </motion.div>
@@ -198,172 +235,123 @@ export default function AudioPlayer() {
                 </AnimatePresence>
               </div>
 
-              {/* Speed + Repeat count + Sleep */}
-              <div className="grid grid-cols-3 gap-2">
-                {/* Speed */}
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setShowSpeed(!showSpeed);
-                      setShowReciters(false);
-                      setShowSleep(false);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-surface-800/60 border border-white/[0.05] hover:border-white/[0.1] transition-all"
-                  >
-                    <Gauge className="w-3.5 h-3.5 text-surface-400" />
-                    <span className="text-xs font-semibold text-surface-200">
-                      {speed}x
+              {/* Repeat count (only when verse repeat is active) */}
+              <div>
+                {repeatMode === "verse" ? (
+                  <div className="flex items-center gap-1 p-1 rounded-xl bg-surface-800/60 border border-white/[0.05]">
+                    <button
+                      onClick={() => setRepeatCount(Math.max(1, repeatCount - 1))}
+                      className="px-2 py-1 text-surface-400 hover:text-surface-100 text-sm"
+                    >
+                      −
+                    </button>
+                    <span className="flex-1 text-center text-xs font-semibold text-surface-200">
+                      ×{repeatCount}
                     </span>
-                  </button>
-
-                  <AnimatePresence>
-                    {showSpeed && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -5 }}
-                        className="absolute bottom-full left-0 right-0 mb-2 rounded-xl bg-surface-900 border border-white/[0.08] shadow-2xl overflow-hidden z-10"
-                      >
-                        {SPEED_OPTIONS.map((s) => (
-                          <button
-                            key={s}
-                            onClick={() => {
-                              setSpeed(s);
-                              setShowSpeed(false);
-                            }}
-                            className={cn(
-                              "w-full px-3 py-2 text-xs text-center transition-all",
-                              speed === s
-                                ? "bg-primary-900/40 text-primary-300"
-                                : "hover:bg-surface-800 text-surface-300"
-                            )}
-                          >
-                            {s}x {s === 1 && "(normal)"}
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {/* Repeat count */}
-                <div>
-                  {repeatMode === "verse" ? (
-                    <div className="flex items-center gap-1 p-1 rounded-xl bg-surface-800/60 border border-white/[0.05]">
-                      <button
-                        onClick={() => setRepeatCount(Math.max(1, repeatCount - 1))}
-                        className="px-2 py-1 text-surface-400 hover:text-surface-100 text-sm"
-                      >
-                        −
-                      </button>
-                      <span className="flex-1 text-center text-xs font-semibold text-surface-200">
-                        ×{repeatCount}
-                      </span>
-                      <button
-                        onClick={() => setRepeatCount(repeatCount + 1)}
-                        className="px-2 py-1 text-surface-400 hover:text-surface-100 text-sm"
-                      >
-                        +
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="p-2.5 rounded-xl bg-surface-800/30 border border-white/[0.03] text-center">
-                      <span className="text-[10px] text-surface-600">
-                        No repeat
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Sleep */}
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setShowSleep(!showSleep);
-                      setShowReciters(false);
-                      setShowSpeed(false);
-                    }}
-                    className={cn(
-                      "w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border transition-all",
-                      sleepTimer
-                        ? "bg-purple-900/30 border-purple-700/40 text-purple-300"
-                        : "bg-surface-800/60 border-white/[0.05] text-surface-200 hover:border-white/[0.1]"
-                    )}
-                  >
-                    <Moon className="w-3.5 h-3.5" />
-                    <span className="text-xs font-semibold">
-                      {sleepTimer ? `${sleepRemaining}m` : "Sleep"}
+                    <button
+                      onClick={() => setRepeatCount(repeatCount + 1)}
+                      className="px-2 py-1 text-surface-400 hover:text-surface-100 text-sm"
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-xl bg-surface-800/30 border border-white/[0.03] text-center">
+                    <span className="text-[10px] text-surface-600">
+                      No repeat
                     </span>
-                  </button>
-
-                  <AnimatePresence>
-                    {showSleep && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -5 }}
-                        className="absolute bottom-full right-0 mb-2 w-48 rounded-xl bg-surface-900 border border-white/[0.08] shadow-2xl overflow-hidden z-10"
-                      >
-                        {sleepTimer && (
-                          <button
-                            onClick={() => {
-                              cancelSleepTimer();
-                              setShowSleep(false);
-                            }}
-                            className="w-full px-3 py-2 text-xs text-red-400 hover:bg-red-900/20 border-b border-white/[0.05]"
-                          >
-                            Cancel timer
-                          </button>
-                        )}
-                        {SLEEP_OPTIONS.map((min) => (
-                          <button
-                            key={min}
-                            onClick={() => {
-                              setSleepTimer(min);
-                              setShowSleep(false);
-                            }}
-                            className="w-full px-3 py-2 text-xs text-left text-surface-300 hover:bg-surface-800"
-                          >
-                            {min} minutes
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
+                  </div>
+                )}
               </div>
 
-              {/* Volume */}
-              <div className="flex items-center gap-3">
+              {/* Sleep timer */}
+              <div className="relative">
                 <button
-                  onClick={toggleMute}
-                  className="text-surface-400 hover:text-surface-100 transition-colors"
-                >
-                  {isMuted || volume === 0 ? (
-                    <VolumeX className="w-4 h-4" />
-                  ) : (
-                    <Volume2 className="w-4 h-4" />
+                  onClick={() => {
+                    setShowSleep(!showSleep);
+                    setShowReciters(false);
+                    setShowSpeed(false);
+                  }}
+                  className={cn(
+                    "w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border transition-all",
+                    sleepTimer
+                      ? "bg-purple-900/30 border-purple-700/40 text-purple-300"
+                      : "bg-surface-800/60 border-white/[0.05] text-surface-200 hover:border-white/[0.1]"
                   )}
+                >
+                  <Moon className="w-3.5 h-3.5" />
+                  <span className="text-xs font-semibold">
+                    {sleepTimer ? `${sleepRemaining}m` : "Sleep"}
+                  </span>
                 </button>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => setVolume(Number(e.target.value))}
-                  className="flex-1 h-1.5 rounded-full accent-primary-500"
-                />
-                <span className="text-[10px] text-surface-500 w-8 text-right">
-                  {Math.round((isMuted ? 0 : volume) * 100)}%
-                </span>
+
+                <AnimatePresence>
+                  {showSleep && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      className="absolute bottom-full right-0 mb-2 w-48 rounded-xl bg-surface-900 border border-white/[0.08] shadow-2xl overflow-hidden z-10"
+                    >
+                      {sleepTimer && (
+                        <button
+                          onClick={() => {
+                            cancelSleepTimer();
+                            setShowSleep(false);
+                          }}
+                          className="w-full px-3 py-2 text-xs text-red-400 hover:bg-red-900/20 border-b border-white/[0.05]"
+                        >
+                          Cancel timer
+                        </button>
+                      )}
+                      {SLEEP_OPTIONS.map((min) => (
+                        <button
+                          key={min}
+                          onClick={() => {
+                            setSleepTimer(min);
+                            setShowSleep(false);
+                          }}
+                          className="w-full px-3 py-2 text-xs text-left text-surface-300 hover:bg-surface-800"
+                        >
+                          {min} minutes
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
+            </div>
+
+            {/* Volume */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={toggleMute}
+                className="text-surface-400 hover:text-surface-100 transition-colors"
+              >
+                {isMuted || volume === 0 ? (
+                  <VolumeX className="w-4 h-4" />
+                ) : (
+                  <Volume2 className="w-4 h-4" />
+                )}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={isMuted ? 0 : volume}
+                onChange={(e) => setVolume(Number(e.target.value))}
+                className="flex-1 h-1.5 rounded-full accent-primary-500"
+              />
+              <span className="text-[10px] text-surface-500 w-8 text-right">
+                {Math.round((isMuted ? 0 : volume) * 100)}%
+              </span>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* MAIN PLAYER BAR — Always visible, compact */}
+      {/* Main player bar */}
       <div className="flex items-center gap-3 md:gap-4 px-3 md:px-6 py-3">
         {/* Current verse info */}
         <Link
@@ -464,17 +452,11 @@ export default function AudioPlayer() {
           </span>
         </div>
 
-        {/* Right actions — Expand chevron + Close */}
+        {/* Right actions */}
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className={cn(
-              "p-2 rounded-xl transition-all",
-              isExpanded
-                ? "text-primary-400 bg-primary-900/30"
-                : "text-surface-500 hover:text-surface-200 hover:bg-surface-800/60"
-            )}
-            title={isExpanded ? "Hide options" : "Show options"}
+            className="p-2 rounded-xl text-surface-500 hover:text-surface-200 hover:bg-surface-800/60 transition-all"
           >
             {isExpanded ? (
               <ChevronDown className="w-4 h-4" />
@@ -492,7 +474,7 @@ export default function AudioPlayer() {
         </div>
       </div>
 
-      {/* Mobile progress bar */}
+      {/* Mobile progress bar (full width) */}
       <div className="md:hidden px-3 pb-2">
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-surface-500 w-8 text-right tabular-nums">

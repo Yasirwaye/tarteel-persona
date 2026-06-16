@@ -1,6 +1,7 @@
 // src/components/layout/Sidebar.tsx
 "use client";
 
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,7 +19,8 @@ import {
   Sparkles,
   Star,
   Sun,
-  BarChart3
+  BarChart3,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,88 +32,49 @@ interface SidebarProps {
 }
 
 const navItems = [
-  {
-    href: "/surah",
-    icon: BookOpen,
-    label: "Quran",
-    description: "Read & Listen",
-  },
-  {
-    href: "/recitation",
-    icon: Mic,
-    label: "Recitation",
-    description: "Practice & Improve",
-  },
-  {
-    href: "/memorization",
-    icon: Brain,
-    label: "Memorization",
-    description: "Hifz with spaced repetition",
-  },
-  {
-    href: "/tajweed",
-    icon: Sparkles,
-    label: "Tajweed Guide",
-    description: "Recitation rules",
-  },
-  {
-    href: "/search",
-    icon: Search,
-    label: "Search",
-    description: "Find anything",
-  },
-  {
-    href: "/chat",
-    icon: MessageSquare,
-    label: "AI Chat",
-    description: "Ask about Quran",
-  },
-  {
-    href: "/daily",
-    icon: Sun,
-    label: "Daily Verse",
-    description: "Today's reflection",
-  },
-  {
-    href: "/stats",
-    icon: BarChart3,
-    label: "Stats",
-    description: "Your progress",
-  },
-  {
-    href: "/bookmarks",
-    icon: Bookmark,
-    label: "Bookmarks",
-    description: "Saved verses",
-  },
-  {
-    href: "/notes",
-    icon: StickyNote,
-    label: "Notes",
-    description: "Your reflections",
-  },
+  { href: "/surah", icon: BookOpen, label: "Quran", description: "Read & Listen" },
+  { href: "/recitation", icon: Mic, label: "Recitation", description: "Practice & Improve" },
+  { href: "/memorization", icon: Brain, label: "Memorization", description: "Hifz with spaced repetition" },
+  { href: "/tajweed", icon: Sparkles, label: "Tajweed Guide", description: "Recitation rules" },
+  { href: "/search", icon: Search, label: "Search", description: "Find anything" },
+  { href: "/chat", icon: MessageSquare, label: "AI Chat", description: "Ask about Quran" },
+  { href: "/daily", icon: Sun, label: "Daily Verse", description: "Today's reflection" },
+  { href: "/stats", icon: BarChart3, label: "Stats", description: "Your progress" },
+  { href: "/bookmarks", icon: Bookmark, label: "Bookmarks", description: "Saved verses" },
+  { href: "/notes", icon: StickyNote, label: "Notes", description: "Your reflections" },
 ];
 
 export default function Sidebar({
+  isOpen,
   isCollapsed,
   onCollapse,
+  onClose,
 }: SidebarProps) {
   const pathname = usePathname();
 
-  return (
-    <motion.aside
-      initial={false}
-      animate={{ width: isCollapsed ? 72 : 240 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-      className={cn(
-        "hidden md:flex flex-col h-full",
-        "bg-surface-900/80 backdrop-blur-xl",
-        "border-r border-white/[0.05]",
-        "relative z-30 flex-shrink-0"
-      )}
-    >
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  // Lock body scroll when mobile drawer is open
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isOpen]);
+
+  const SidebarContent = (
+    <>
       {/* Logo */}
-      <div className="flex items-center h-16 px-4 border-b border-white/[0.05]">
+      <div className="flex items-center justify-between h-16 px-4 border-b border-white/[0.05] flex-shrink-0">
         <Link href="/" className="flex items-center gap-3 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center flex-shrink-0">
             <Star className="w-4 h-4 text-white fill-white" />
@@ -126,7 +89,7 @@ export default function Sidebar({
                 className="overflow-hidden"
               >
                 <p className="text-sm font-semibold text-surface-100 whitespace-nowrap">
-                  Tarteel Personal
+                  Tilawah
                 </p>
                 <p className="text-xs text-primary-400 whitespace-nowrap -mt-0.5">
                   Premium Unlocked
@@ -135,6 +98,15 @@ export default function Sidebar({
             )}
           </AnimatePresence>
         </Link>
+
+        {/* Mobile close button */}
+        <button
+          onClick={onClose}
+          className="md:hidden p-2 -mr-2 rounded-lg text-surface-400 hover:text-surface-100 hover:bg-surface-800/60 transition-colors"
+          aria-label="Close menu"
+        >
+          <X className="w-5 h-5" />
+        </button>
       </div>
 
       {/* Nav */}
@@ -148,6 +120,7 @@ export default function Sidebar({
             <Link
               key={item.href}
               href={item.href}
+              onClick={onClose}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-xl",
                 "transition-all duration-200 group relative",
@@ -195,7 +168,7 @@ export default function Sidebar({
               </AnimatePresence>
 
               {isCollapsed && (
-                <div className="absolute left-full ml-2 px-2 py-1 bg-surface-800 text-surface-100 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 border border-white/10">
+                <div className="hidden md:block absolute left-full ml-2 px-2 py-1 bg-surface-800 text-surface-100 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 border border-white/10">
                   {item.label}
                 </div>
               )}
@@ -205,7 +178,7 @@ export default function Sidebar({
       </nav>
 
       {/* Bottom */}
-      <div className="p-2 border-t border-white/[0.05] space-y-1">
+      <div className="p-2 border-t border-white/[0.05] space-y-1 flex-shrink-0">
         <AnimatePresence>
           {!isCollapsed && (
             <motion.div
@@ -229,6 +202,7 @@ export default function Sidebar({
 
         <Link
           href="/settings"
+          onClick={onClose}
           className={cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-xl",
             "transition-all duration-200",
@@ -252,25 +226,83 @@ export default function Sidebar({
           </AnimatePresence>
         </Link>
       </div>
+    </>
+  );
 
-      {/* Collapse toggle */}
-      <button
-        onClick={onCollapse}
+  return (
+    <>
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* DESKTOP SIDEBAR — Always visible, collapsible      */}
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <motion.aside
+        initial={false}
+        animate={{ width: isCollapsed ? 72 : 240 }}
+        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
         className={cn(
-          "absolute -right-3 top-20",
-          "w-6 h-6 rounded-full",
-          "bg-surface-800 border border-surface-700",
-          "flex items-center justify-center",
-          "text-surface-400 hover:text-surface-100",
-          "transition-colors shadow-lg z-50"
+          "hidden md:flex flex-col h-full",
+          "bg-surface-900/80 backdrop-blur-xl",
+          "border-r border-white/[0.05]",
+          "relative z-30 flex-shrink-0"
         )}
       >
-        {isCollapsed ? (
-          <ChevronRight className="w-3 h-3" />
-        ) : (
-          <ChevronLeft className="w-3 h-3" />
+        {SidebarContent}
+
+        {/* Collapse toggle (desktop only) */}
+        <button
+          onClick={onCollapse}
+          className={cn(
+            "absolute -right-3 top-20",
+            "w-6 h-6 rounded-full",
+            "bg-surface-800 border border-surface-700",
+            "flex items-center justify-center",
+            "text-surface-400 hover:text-surface-100",
+            "transition-colors shadow-lg z-50"
+          )}
+          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {isCollapsed ? (
+            <ChevronRight className="w-3 h-3" />
+          ) : (
+            <ChevronLeft className="w-3 h-3" />
+          )}
+        </button>
+      </motion.aside>
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* MOBILE DRAWER — Hidden by default, full overlay   */}
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={onClose}
+              className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+              aria-hidden="true"
+            />
+
+            {/* Drawer */}
+            <motion.aside
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+              className={cn(
+                "md:hidden fixed top-0 left-0 bottom-0 z-50",
+                "w-72 max-w-[85vw]",
+                "bg-surface-900 border-r border-white/[0.05]",
+                "flex flex-col"
+              )}
+            >
+              {SidebarContent}
+            </motion.aside>
+          </>
         )}
-      </button>
-    </motion.aside>
+      </AnimatePresence>
+    </>
   );
 }
