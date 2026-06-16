@@ -24,6 +24,7 @@ import { useNotesStore } from "@/stores/notesStore";
 import { useMemorizationStore } from "@/stores/memorizationStore";
 import { useReflectionsStore } from "@/stores/reflectionsStore";
 import { useActivityStore } from "@/stores/activityStore";
+import { usePrayerNotifications } from "@/hooks/usePrayerNotifications";
 
 const container = {
   hidden: { opacity: 0 },
@@ -44,7 +45,23 @@ function getGreeting(): string {
   return "Good night 🌙";
 }
 
+function getIslamicDate(): string {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-TN-u-ca-islamic-umalqura", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    return formatter.format(new Date()).replace(/\sAH$/, " AH");
+  } catch {
+    return "";
+  }
+}
+
 export default function HomePage() {
+  // Initialize prayer notification scheduler
+  usePrayerNotifications();
+
   // ── Real data from stores ─────────────────────────────────────────
   const lastRead = useReaderStore((s) => s.lastRead);
   const recentSurahIds = useReaderStore((s) => s.recentSurahs);
