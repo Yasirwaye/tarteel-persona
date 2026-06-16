@@ -25,6 +25,16 @@ export const metadata: Metadata = {
   },
   description:
     "Your personal Quran companion — read, listen, understand, and memorize.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Tilawah",
+  },
+  icons: {
+    icon: "/icons/quran-icon.png",
+    apple: "/icons/quran-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
