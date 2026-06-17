@@ -159,13 +159,35 @@
 
 
 
-/* ── Mushaf typography & scaling ─────────────────────────────────── */
 
 /* Default desktop: fixed reference width */
+
+
+
+
+/* Wrapper allows the transform to not break layout */
+
+
+/* On screens narrower than 720px, scale the whole mushaf to fit */
+
+
+/* Even smaller phones */
+
+
+
+/* ── Mushaf typography & scaling (fixed for mobile) ───────────── */
+
+.mushaf-scale-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  /* IMPORTANT: don't clip — let scaled content show fully */
+  overflow: visible;
+}
+
 .mushaf-scale-container {
   width: 680px;
-  margin-left: auto;
-  margin-right: auto;
+  flex-shrink: 0;
 }
 
 .mushaf-scale-container > div {
@@ -173,36 +195,29 @@
   line-height: 2.2;
 }
 
-/* Wrapper allows the transform to not break layout */
-.mushaf-scale-wrapper {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  overflow: hidden;
-}
-
-/* On screens narrower than 720px, scale the whole mushaf to fit */
+/* Mobile scaling — scale + use negative margins to compensate for scaling space */
 @media (max-width: 719px) {
-  .mushaf-scale-container {
-    transform-origin: top center;
-    transform: scale(calc((100vw - 32px) / 680));
-  }
-
-  /* Compensate for vertical space lost by scale */
   .mushaf-scale-wrapper {
-    height: auto;
+    /* Allow horizontal overflow to be visible (not clipped) */
+    overflow: hidden;
+    /* Wrapper takes natural width */
+    width: 100%;
   }
 
-  .mushaf-scale-container > div {
-    /* Keep base size — transform handles the scaling */
-    font-size: 1.75rem;
-    line-height: 2.2;
+  .mushaf-scale-container {
+    /* Scale to fit available width with safe padding */
+    transform-origin: top right;
+    transform: scale(calc((100vw - 24px) / 680));
+    /* Critical: compensate for scaled width so flow is correct */
+    margin-left: calc((100vw - 24px) - 680px);
+    /* Compensate vertical space the scale "eats" */
+    margin-bottom: calc(((100vw - 24px) / 680 - 1) * 100%);
   }
 }
 
-/* Even smaller phones */
 @media (max-width: 380px) {
   .mushaf-scale-container {
-    transform: scale(calc((100vw - 24px) / 680));
+    transform: scale(calc((100vw - 16px) / 680));
+    margin-left: calc((100vw - 16px) - 680px);
   }
 }
