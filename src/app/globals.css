@@ -123,17 +123,6 @@
   }
 }
 
-/* ── Mushaf page typography ─────────────────────────────────────────── */
-.mushaf-page-text {
-  /* Justified Arabic text needs special handling */
-  text-justify: inter-word;
-  /* Force ligatures and proper Arabic shaping */
-  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
-  /* Optimize for Arabic */
-  font-variant-ligatures: contextual;
-  /* Prevent breaking inside an ayah */
-  text-wrap: pretty;
-}
 
 /* Make the mushaf font heavier for better readability at large size */
 .mushaf-page-text {
@@ -158,38 +147,62 @@
 }
 
 /* On narrow screens, allow horizontal scroll as last resort */
-@media (max-width: 480px) {
-  .mushaf-scale-container {
-    /* Force smaller base size on phones */
-    font-size: 1.25rem !important;
-  }
-  .mushaf-scale-container > div {
-    line-height: 2 !important;
-  }
-}
 
 
-/* ── Mushaf typography ────────────────────────────────────────── */
-.mushaf-scale-container {
-  /* Allow each line to stretch with justify-between */
-}
+
 
 /* Make sure each line uses available width with justify-between */
-.mushaf-scale-container > div {
-  width: 100%;
-}
+
 
 /* Mobile font scaling */
-@media (max-width: 480px) {
+
+
+
+
+/* ── Mushaf typography & scaling ─────────────────────────────────── */
+
+/* Default desktop: fixed reference width */
+.mushaf-scale-container {
+  width: 680px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.mushaf-scale-container > div {
+  font-size: 1.75rem;
+  line-height: 2.2;
+}
+
+/* Wrapper allows the transform to not break layout */
+.mushaf-scale-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* On screens narrower than 720px, scale the whole mushaf to fit */
+@media (max-width: 719px) {
+  .mushaf-scale-container {
+    transform-origin: top center;
+    transform: scale(calc((100vw - 32px) / 680));
+  }
+
+  /* Compensate for vertical space lost by scale */
+  .mushaf-scale-wrapper {
+    height: auto;
+  }
+
   .mushaf-scale-container > div {
-    font-size: 1.35rem !important;
-    line-height: 2 !important;
+    /* Keep base size — transform handles the scaling */
+    font-size: 1.75rem;
+    line-height: 2.2;
   }
 }
 
-@media (min-width: 481px) and (max-width: 768px) {
-  .mushaf-scale-container > div {
-    font-size: 1.5rem !important;
-    line-height: 2.1 !important;
+/* Even smaller phones */
+@media (max-width: 380px) {
+  .mushaf-scale-container {
+    transform: scale(calc((100vw - 24px) / 680));
   }
 }

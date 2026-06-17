@@ -272,16 +272,10 @@ export default function MushafView({
               <Loader2 className={cn("w-6 h-6 animate-spin", subtleTextClass)} />
             </div>
           ) : (
-            <div
-              className="w-full overflow-hidden"
-              style={{
-                // Container queries scale text to fit width
-                containerType: "inline-size",
-              }}
-            >
+            <div className="mushaf-scale-wrapper">
               <div
                 dir="rtl"
-                className={cn("space-y-4 mushaf-scale-container w-full", textClass)}
+                className={cn("space-y-4 mushaf-scale-container", textClass)}
                 style={{
                   fontFamily: getPageFontFamily(currentPageNumber),
                 }}
@@ -347,10 +341,7 @@ export default function MushafView({
                           "flex items-baseline w-full",
                           isCenteredLine ? "justify-center" : "justify-between"
                         )}
-                        style={{
-                          fontSize: "1.75rem",
-                          lineHeight: 2.2,
-                          }}
+                        
                       >
                         {line.words.map((word, idx) => {
                           const isPlayingNow =
