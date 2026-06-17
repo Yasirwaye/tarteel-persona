@@ -19,10 +19,10 @@ export default function SurahBanner({
   const textColor = isDark ? "text-[#e5d9b6]" : "text-[#6b4226]";
 
   return (
-    <div className="my-8 w-full px-2" dir="ltr">
+    <div className="my-6 w-full" dir="ltr">
       <div className="relative w-full">
         <svg
-          viewBox="0 0 1000 140"
+          viewBox="0 0 1000 100"
           className="w-full h-auto"
           preserveAspectRatio="none"
           style={{ filter: isDark ? "none" : "none" }}
@@ -32,7 +32,7 @@ export default function SurahBanner({
             x="4"
             y="4"
             width="992"
-            height="132"
+            height="92"
             fill={fill}
             stroke={stroke}
             strokeWidth="2.5"
@@ -42,7 +42,7 @@ export default function SurahBanner({
             x="12"
             y="12"
             width="976"
-            height="116"
+            height="76"
             fill="none"
             stroke={stroke}
             strokeWidth="1"
@@ -52,7 +52,7 @@ export default function SurahBanner({
             x="18"
             y="18"
             width="964"
-            height="104"
+            height="64"
             fill="none"
             stroke={stroke}
             strokeWidth="0.5"
@@ -63,8 +63,8 @@ export default function SurahBanner({
           {[
             { x: 22, y: 22, rot: 0 },
             { x: 978, y: 22, rot: 90 },
-            { x: 978, y: 118, rot: 180 },
-            { x: 22, y: 118, rot: 270 },
+            { x: 978, y: 78, rot: 180 },
+            { x: 22, y: 78, rot: 270 },
           ].map((corner, i) => (
             <g
               key={i}
@@ -80,7 +80,7 @@ export default function SurahBanner({
           ))}
 
           {/* ── LEFT MEDALLION — Star within circles ── */}
-          <g transform="translate(80, 70)">
+          <g transform="translate(80, 50)">
             {/* Outer ring */}
             <circle r="40" fill="none" stroke={stroke} strokeWidth="1.5" />
             <circle r="38" fill="none" stroke={stroke} strokeWidth="0.5" opacity="0.4" />
@@ -135,7 +135,7 @@ export default function SurahBanner({
           </g>
 
           {/* ── RIGHT MEDALLION — Mirror of left ── */}
-          <g transform="translate(920, 70)">
+          <g transform="translate(920, 50)">
             <circle r="40" fill="none" stroke={stroke} strokeWidth="1.5" />
             <circle r="38" fill="none" stroke={stroke} strokeWidth="0.5" opacity="0.4" />
             <circle r="32" fill={accent} opacity="0.08" />
@@ -185,68 +185,68 @@ export default function SurahBanner({
           {/* ── Connecting arabesque from left medallion ── */}
           <g>
             <path
-              d="M 130,70 Q 180,55 230,70 Q 270,82 310,70"
+              d="M 130,70 Q 180,35 230,50 Q 270,62 310,50"
               fill="none"
               stroke={stroke}
               strokeWidth="1"
               opacity="0.7"
             />
             <path
-              d="M 130,70 Q 180,85 230,70 Q 270,58 310,70"
+              d="M 130,70 Q 180,65 230,50 Q 270,38 310,50"
               fill="none"
               stroke={stroke}
               strokeWidth="1"
               opacity="0.7"
             />
             {/* Small flourish dots */}
-            <circle cx="180" cy="70" r="2" fill={accent} />
-            <circle cx="230" cy="70" r="1.5" fill={accent} opacity="0.7" />
-            <circle cx="280" cy="70" r="2" fill={accent} />
+            <circle cx="180" cy="50" r="2" fill={accent} />
+            <circle cx="230" cy="50" r="1.5" fill={accent} opacity="0.7" />
+            <circle cx="280" cy="50" r="2" fill={accent} />
           </g>
 
           {/* ── Connecting arabesque from right medallion ── */}
           <g>
             <path
-              d="M 870,70 Q 820,55 770,70 Q 730,82 690,70"
+              d="M 870,70 Q 820,35 770,50 Q 730,62 690,50"
               fill="none"
               stroke={stroke}
               strokeWidth="1"
               opacity="0.7"
             />
             <path
-              d="M 870,70 Q 820,85 770,70 Q 730,58 690,70"
+              d="M 870,70 Q 820,65 770,50 Q 730,38 690,50"
               fill="none"
               stroke={stroke}
               strokeWidth="1"
               opacity="0.7"
             />
-            <circle cx="820" cy="70" r="2" fill={accent} />
-            <circle cx="770" cy="70" r="1.5" fill={accent} opacity="0.7" />
-            <circle cx="720" cy="70" r="2" fill={accent} />
+            <circle cx="820" cy="50" r="2" fill={accent} />
+            <circle cx="770" cy="50" r="1.5" fill={accent} opacity="0.7" />
+            <circle cx="720" cy="50" r="2" fill={accent} />
           </g>
 
           {/* ── Center cartouche where the name will sit ── */}
           <g>
             {/* Decorative cartouche frame */}
             <path
-              d="M 340,40 Q 320,40 320,60 L 320,80 Q 320,100 340,100 L 660,100 Q 680,100 680,80 L 680,60 Q 680,40 660,40 Z"
+              d="M 340,25 Q 320,40 320,45 L 320,55 Q 320,75 340,75 L 660,75 Q 680,100 680,55 L 680,45 Q 680,40 660,25 Z"
               fill={fill}
               stroke={stroke}
               strokeWidth="1.2"
             />
             {/* Inner cartouche line */}
             <path
-              d="M 348,46 Q 332,46 332,62 L 332,78 Q 332,94 348,94 L 652,94 Q 668,94 668,78 L 668,62 Q 668,46 652,46 Z"
+              d="M 348,31 Q 332,46 332,49 L 332,55 Q 332,71 348,71 L 652,71 Q 668,94 668,55 L 668,49 Q 668,46 652,31 Z"
               fill="none"
               stroke={stroke}
               strokeWidth="0.5"
               opacity="0.6"
             />
             {/* Tiny dots inside cartouche corners */}
-            <circle cx="340" cy="50" r="1" fill={accent} />
-            <circle cx="660" cy="50" r="1" fill={accent} />
-            <circle cx="340" cy="90" r="1" fill={accent} />
-            <circle cx="660" cy="90" r="1" fill={accent} />
+            <circle cx="340" cy="35" r="1" fill={accent} />
+            <circle cx="660" cy="35" r="1" fill={accent} />
+            <circle cx="340" cy="65" r="1" fill={accent} />
+            <circle cx="660" cy="65" r="1" fill={accent} />
           </g>
         </svg>
 

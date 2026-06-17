@@ -266,7 +266,7 @@ export default function MushafView({
         </div>
 
         {/* 15-line mushaf content */}
-        <div className="px-4 md:px-8 py-8 min-h-[600px]">
+        <div className="px-4 md:px-8 py-8">
           {loadingPage || !madaniPage ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className={cn("w-6 h-6 animate-spin", subtleTextClass)} />
@@ -281,11 +281,9 @@ export default function MushafView({
             >
               <div
                 dir="rtl"
-                className={cn("space-y-4 mx-auto mushaf-scale-container", textClass)}
+                className={cn("space-y-4 mushaf-scale-container w-full", textClass)}
                 style={{
                   fontFamily: getPageFontFamily(currentPageNumber),
-                  width: "fit-content",
-                  maxWidth: "100%",
                 }}
               >
               {(() => {
@@ -352,8 +350,7 @@ export default function MushafView({
                         style={{
                           fontSize: "1.75rem",
                           lineHeight: 2.2,
-                          whiteSpace: "nowrap",
-                        }}
+                          }}
                       >
                         {line.words.map((word, idx) => {
                           const isPlayingNow =

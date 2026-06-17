@@ -157,13 +157,6 @@
   }
 }
 
-/* ── Mushaf auto-scale to fit container width ─────────────────── */
-.mushaf-scale-container {
-  /* Scale down if content overflows container */
-  transform-origin: top center;
-  transform: scale(min(1, calc(100cqi / 800px)));
-}
-
 /* On narrow screens, allow horizontal scroll as last resort */
 @media (max-width: 480px) {
   .mushaf-scale-container {
@@ -172,5 +165,31 @@
   }
   .mushaf-scale-container > div {
     line-height: 2 !important;
+  }
+}
+
+
+/* ── Mushaf typography ────────────────────────────────────────── */
+.mushaf-scale-container {
+  /* Allow each line to stretch with justify-between */
+}
+
+/* Make sure each line uses available width with justify-between */
+.mushaf-scale-container > div {
+  width: 100%;
+}
+
+/* Mobile font scaling */
+@media (max-width: 480px) {
+  .mushaf-scale-container > div {
+    font-size: 1.35rem !important;
+    line-height: 2 !important;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 768px) {
+  .mushaf-scale-container > div {
+    font-size: 1.5rem !important;
+    line-height: 2.1 !important;
   }
 }
