@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, BellOff, Volume2, VolumeX, MapPin, Play, Loader2 } from "lucide-react";
+import { Bell, BellOff, Volume2, VolumeX, MapPin, Play, Loader2, Headphones, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import {
   usePrayerStore,
@@ -18,6 +18,7 @@ import {
   testAdhan,
 } from "@/hooks/usePrayerNotifications";
 import { cn } from "@/lib/utils";
+import { isNative } from "@/lib/platform";
 
 export default function PrayerBell() {
   const [open, setOpen] = useState(false);
@@ -28,6 +29,8 @@ export default function PrayerBell() {
   const country = usePrayerStore((s) => s.country);
   const notificationsEnabled = usePrayerStore((s) => s.notificationsEnabled);
   const adhanEnabled = usePrayerStore((s) => s.adhanEnabled);
+  const adhanMode = usePrayerStore((s) => s.adhanMode);
+  const setAdhanMode = usePrayerStore((s) => s.setAdhanMode);
   const enabledPrayers = usePrayerStore((s) => s.enabledPrayers);
 
   // Fetch on mount
@@ -203,30 +206,46 @@ export default function PrayerBell() {
                   </div>
                 </button>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => usePrayerStore.getState().setAdhanEnabled(!adhanEnabled)}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-2 p-2 rounded-xl text-xs transition-all",
-                      adhanEnabled
-                        ? "bg-gold-900/30 text-gold-300 border border-gold-700/30"
-                        : "bg-surface-800/60 text-surface-300 border border-white/[0.05]"
-                    )}
-                  >
-                    {adhanEnabled ? (
-                      <Volume2 className="w-3.5 h-3.5" />
-                    ) : (
-                      <VolumeX className="w-3.5 h-3.5" />
-                    )}
-                    <span>Adhan {adhanEnabled ? "On" : "Off"}</span>
-                  </button>
-                  <button
-                    onClick={testAdhan}
-                    className="p-2 rounded-xl bg-surface-800/60 hover:bg-surface-800 border border-white/[0.05] text-surface-300 transition-all"
-                    title="Test adhan"
-                  >
-                    <Play className="w-3.5 h-3.5" />
-                  </button>
+                {/* Adhan mode picker (3 states) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] uppercase tracking-wider text-surface-500 font-semibold">Adhan</span>
+                    <button
+                      onClick={testAdhan}
+                      className="flex items-center gap-1 text-[10px] text-surface-400 hover:text-primary-300 transition-colors"
+                      title="Test adhan"
+                    >
+                      <Play className="w-3 h-3" />
+                      <span>Test</span>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { value: "silent" as const, label: "Silent", icon: VolumeX },
+                      { value: "short" as const, label: "Short", icon: Volume2 },
+                      { value: "full" as const, label: "Full", icon: Headphones },
+                    ].map(({ value, label, icon: Icon }) => (
+                      <button
+                        key={value}
+                        onClick={() => setAdhanMode(value)}
+                        className={cn(
+                          "flex flex-col items-center gap-1 p-2 rounded-xl text-[11px] transition-all border",
+                          adhanMode === value
+                            ? "bg-gold-900/30 text-gold-300 border-gold-700/40"
+                            : "bg-surface-800/60 text-surface-400 border-white/[0.05] hover:text-surface-200"
+                        )}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        <span className="font-medium">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {isNative() && adhanMode !== "silent" && (
+                    <p className="text-[10px] text-surface-500 px-1 flex items-center gap-1 pt-0.5">
+                      <Smartphone className="w-2.5 h-2.5" />
+                      <span>Plays even when phone is locked</span>
+                    </p>
+                  )}
                 </div>
               </div>
             </motion.div>

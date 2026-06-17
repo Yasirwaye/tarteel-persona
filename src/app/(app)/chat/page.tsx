@@ -1,6 +1,8 @@
 // src/app/(app)/chat/page.tsx
 "use client";
 
+import { apiUrl } from "@/lib/apiBase";
+
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -92,7 +94,7 @@ export default function ChatPage() {
       addMessage(convId, { role: "assistant", content: "" });
 
       try {
-        const res = await fetch("/api/chat", {
+        const res = await fetch(apiUrl("/api/chat"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ messages: apiMessages }),

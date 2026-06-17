@@ -1,6 +1,8 @@
 // src/components/search/VoiceSearchButton.tsx
 "use client";
 
+import { apiUrl } from "@/lib/apiBase";
+
 import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mic, Square, Loader2 } from "lucide-react";
@@ -130,7 +132,7 @@ export default function VoiceSearchButton({ onTranscript, className }: Props) {
       const formData = new FormData();
       formData.append("audio", blob, "voice-search.webm");
 
-      const res = await fetch("/api/transcribe-stream", {
+      const res = await fetch(apiUrl("/api/transcribe-stream"), {
         method: "POST",
         body: formData,
       });

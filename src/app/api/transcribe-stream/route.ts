@@ -1,4 +1,5 @@
 // src/app/api/transcribe-stream/route.ts
+import { withCors, corsPreflight } from "@/lib/cors";
 export const maxDuration = 30;
 export const runtime = "nodejs";
 
@@ -11,7 +12,7 @@ export async function POST(req: Request) {
     if (!process.env.GROQ_API_KEY) {
       return new Response(
         JSON.stringify({ error: "GROQ_API_KEY is not set" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        { status: 500, headers: withCors({ "Content-Type": "application/json" }) }
       );
     }
 
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
     if (!audioFile) {
       return new Response(
         JSON.stringify({ error: "No audio file" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        { status: 400, headers: withCors({ "Content-Type": "application/json" }) }
       );
     }
 
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
         }),
         {
           status: groqResponse.status,
-          headers: { "Content-Type": "application/json" },
+          headers: withCors({ "Content-Type": "application/json" }),
         }
       );
     }
@@ -60,14 +61,18 @@ export async function POST(req: Request) {
     const data = await groqResponse.json();
     return new Response(
       JSON.stringify({ text: data.text || "" }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+      { status: 200, headers: withCors({ "Content-Type": "application/json" }) }
     );
   } catch (error) {
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : "Failed",
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: withCors({ "Content-Type": "application/json" }) }
     );
   }
+}
+
+export async function OPTIONS() {
+  return corsPreflight();
 }

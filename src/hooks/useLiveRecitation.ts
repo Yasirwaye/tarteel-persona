@@ -1,6 +1,8 @@
 // src/hooks/useLiveRecitation.ts
 "use client";
 
+import { apiUrl } from "@/lib/apiBase";
+
 import { useState, useRef, useCallback, useEffect } from "react";
 import {
   compareRecitation,
@@ -72,6 +74,9 @@ export function useLiveRecitation({
   const animationFrameRef = useRef<number | null>(null);
   const mimeTypeRef = useRef<string>("audio/webm");
   const sessionIdRef = useRef<number>(0);
+  const streamIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const streamControllerRef = useRef<AbortController | null>(null);
+  const isStreamingRef = useRef<boolean>(false);
 
   // Reset when expected text changes
   useEffect(() => {
@@ -92,6 +97,17 @@ export function useLiveRecitation({
   }, [expectedText, buildInitialWords]);
 
   const cleanup = useCallback(() => {
+    // Stop streaming interval
+    if (streamIntervalRef.current) {
+      clearInterval(streamIntervalRef.current);
+      streamIntervalRef.current = null;
+    }
+    // Abort any in-flight stream request
+    if (streamControllerRef.current) {
+      streamControllerRef.current.abort();
+      streamControllerRef.current = null;
+    }
+    isStreamingRef.current = false;
     if (durationTickerRef.current) {
       clearInterval(durationTickerRef.current);
       durationTickerRef.current = null;
@@ -226,6 +242,69 @@ export function useLiveRecitation({
       recorder.start(250);
       startTimeRef.current = Date.now();
 
+      // ── Streaming transcription — fires every 2 seconds during recording ──
+      streamIntervalRef.current = setInterval(async () => {
+        console.log('[STREAM] interval tick, chunks:', chunksRef.current.length, 'session match:', sessionId === sessionIdRef.current, 'streaming:', isStreamingRef.current);
+        if (sessionId !== sessionIdRef.current) return;
+        if (isStreamingRef.current) return; // skip if previous still running
+        if (chunksRef.current.length === 0) return;
+
+        // Build current audio blob from accumulated chunks
+        const currentBlob = new Blob(chunksRef.current, {
+          type: mimeTypeRef.current,
+        });
+        if (currentBlob.size < 5000) return; // skip tiny chunks (<5KB)
+
+        // Cancel any in-flight request
+        if (streamControllerRef.current) {
+          streamControllerRef.current.abort();
+        }
+
+        const controller = new AbortController();
+        streamControllerRef.current = controller;
+        isStreamingRef.current = true;
+        console.log('[STREAM] firing fetch, blob size:', currentBlob.size);
+
+        try {
+          const formData = new FormData();
+          formData.append("audio", currentBlob, "stream.webm");
+
+          const res = await fetch(apiUrl("/api/transcribe-stream"), {
+            method: "POST",
+            body: formData,
+            signal: controller.signal,
+          });
+
+          if (sessionId !== sessionIdRef.current) {
+            isStreamingRef.current = false;
+            return;
+          }
+
+          if (!res.ok) {
+            isStreamingRef.current = false;
+            return; // silently retry next cycle
+          }
+
+          const data = await res.json();
+          const transcript = (data.text || "").trim();
+          console.log('[STREAM] got transcript:', transcript.slice(0, 100));
+
+          if (transcript && sessionId === sessionIdRef.current) {
+            matchTranscript(transcript);
+            console.log('[STREAM] matched, transcript len:', transcript.length);
+            setState((s) => ({ ...s, spokenSoFar: transcript }));
+          }
+        } catch (err) {
+          // AbortError is expected when superseded — ignore
+          if ((err as Error).name !== "AbortError") {
+            console.log('[STREAM] fetch error:', (err as Error).message);
+            console.warn("[LiveStream] transcribe failed:", err);
+          }
+        } finally {
+          isStreamingRef.current = false;
+        }
+      }, 2000);
+
       durationTickerRef.current = setInterval(() => {
         if (sessionId !== sessionIdRef.current) return;
         setState((s) => ({
@@ -246,7 +325,7 @@ export function useLiveRecitation({
       }));
       cleanup();
     }
-  }, [buildInitialWords, cleanup]);
+  }, [buildInitialWords, cleanup, matchTranscript]);
 
   const stopRecording = useCallback(async () => {
     const sessionId = sessionIdRef.current;
@@ -283,7 +362,7 @@ export function useLiveRecitation({
       const formData = new FormData();
       formData.append("audio", blob, "recording.webm");
 
-      const res = await fetch("/api/transcribe-stream", {
+      const res = await fetch(apiUrl("/api/transcribe-stream"), {
         method: "POST",
         body: formData,
       });

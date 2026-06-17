@@ -56,47 +56,52 @@ export async function buildQuranIndex(
   }
 
   buildPromise = (async () => {
-    const allVerses: SearchableVerse[] = [];
-    const total = surahsMetadata.length;
-
-    // Fetch in batches of 10 to avoid overwhelming the API
-    const BATCH_SIZE = 10;
-
-    for (let i = 0; i < total; i += BATCH_SIZE) {
-      const batch = surahsMetadata.slice(i, i + BATCH_SIZE);
-
-      const results = await Promise.allSettled(
-        batch.map((surah) => fetchSurah(surah.id, translationId))
-      );
-
-      results.forEach((res, idx) => {
-        const surah = batch[idx];
-        if (res.status === "fulfilled") {
-          res.value.forEach((ayah: FullAyah) => {
-            allVerses.push({
-              type: "verse",
-              surahId: surah.id,
-              surahName: surah.name,
-              surahNameArabic: surah.nameArabic,
-              ayahNumber: ayah.ayahNumber,
-              textUthmani: ayah.textUthmani,
-              textNormalized: normalizeArabic(ayah.textUthmani),
-              translation: ayah.translation,
-              translationLower: ayah.translation.toLowerCase(),
-              juz: ayah.juz,
-              page: ayah.page,
+    try {
+      if (onProgress) onProgress(5, 100);
+      const res = await fetch(`/data/search-index-${translationId}.json`);
+      if (!res.ok) throw new Error(`Pre-built index not found: ${res.status}`);
+      if (onProgress) onProgress(50, 100);
+      const data = (await res.json()) as Omit<SearchableVerse, "type">[];
+      const all: SearchableVerse[] = data.map((v) => ({ ...v, type: "verse" as const }));
+      if (onProgress) onProgress(100, 100);
+      cachedIndex = all;
+      console.log("[SearchIndex] Loaded pre-built index:", all.length, "verses");
+      return all;
+    } catch (err) {
+      console.warn("[SearchIndex] Pre-built index unavailable, falling back to API:", err);
+      const allVerses: SearchableVerse[] = [];
+      const total = surahsMetadata.length;
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < total; i += BATCH_SIZE) {
+        const batch = surahsMetadata.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map((surah) => fetchSurah(surah.id, translationId))
+        );
+        results.forEach((res, idx) => {
+          const surah = batch[idx];
+          if (res.status === "fulfilled") {
+            res.value.forEach((ayah: FullAyah) => {
+              allVerses.push({
+                type: "verse",
+                surahId: surah.id,
+                surahName: surah.name,
+                surahNameArabic: surah.nameArabic,
+                ayahNumber: ayah.ayahNumber,
+                textUthmani: ayah.textUthmani,
+                textNormalized: normalizeArabic(ayah.textUthmani),
+                translation: ayah.translation,
+                translationLower: ayah.translation.toLowerCase(),
+                juz: ayah.juz,
+                page: ayah.page,
+              });
             });
-          });
-        }
-      });
-
-      if (onProgress) {
-        onProgress(Math.min(i + BATCH_SIZE, total), total);
+          }
+        });
+        if (onProgress) onProgress(Math.min(i + BATCH_SIZE, total), total);
       }
+      cachedIndex = allVerses;
+      return allVerses;
     }
-
-    cachedIndex = allVerses;
-    return allVerses;
   })();
 
   try {

@@ -1,4 +1,5 @@
 // src/app/api/chat/route.ts
+import { withCors, corsPreflight } from "@/lib/cors";
 export const maxDuration = 60;
 export const runtime = "nodejs";
 
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
     if (!process.env.NVIDIA_API_KEY) {
       return new Response(
         JSON.stringify({ error: "NVIDIA_API_KEY is not set in .env.local" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        { status: 500, headers: withCors({ "Content-Type": "application/json" }) }
       );
     }
 
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response(
         JSON.stringify({ error: "Invalid messages format" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        { status: 400, headers: withCors({ "Content-Type": "application/json" }) }
       );
     }
 
@@ -90,14 +91,14 @@ export async function POST(req: Request) {
             300
           )}`,
         }),
-        { status: nvidiaResponse.status, headers: { "Content-Type": "application/json" } }
+        { status: nvidiaResponse.status, headers: withCors({ "Content-Type": "application/json" }) }
       );
     }
 
     if (!nvidiaResponse.body) {
       return new Response(
         JSON.stringify({ error: "No response body from NVIDIA" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        { status: 500, headers: withCors({ "Content-Type": "application/json" }) }
       );
     }
 
@@ -152,11 +153,11 @@ export async function POST(req: Request) {
     });
 
     return new Response(stream, {
-      headers: {
+      headers: withCors({
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
         "X-Content-Type-Options": "nosniff",
-      },
+      }),
     });
   } catch (error) {
     console.error("Chat API error:", error);
@@ -165,7 +166,7 @@ export async function POST(req: Request) {
         error:
           error instanceof Error ? error.message : "Failed to process chat",
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: withCors({ "Content-Type": "application/json" }) }
     );
   }
 }
@@ -181,6 +182,10 @@ export async function GET() {
         : "NOT SET",
       model: "meta/llama-3.3-70b-instruct",
     }),
-    { status: 200, headers: { "Content-Type": "application/json" } }
+    { status: 200, headers: withCors({ "Content-Type": "application/json" }) }
   );
+}
+
+export async function OPTIONS() {
+  return corsPreflight();
 }

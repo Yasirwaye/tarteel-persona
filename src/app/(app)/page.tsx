@@ -130,6 +130,9 @@ export default function HomePage() {
             day: "numeric",
           })}
         </p>
+        <p className="text-gold-400/80 text-xs mt-1 font-medium">
+          {getIslamicDate()}
+        </p>
       </motion.div>
 
       {/* ── Continue reading ───────────────────────────────────────── */}

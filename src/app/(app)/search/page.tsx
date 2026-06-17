@@ -78,7 +78,11 @@ export default function SearchPage() {
       if (!cancelled) setProgress(loaded, total);
     })
       .then((v) => {
-        if (!cancelled) setVerses(v);
+        if (!cancelled) {
+          setVerses(v);
+          setBuilding(false);
+          setProgress(100, 100);
+        }
       })
       .catch((err) => {
         console.error("Index build failed:", err);

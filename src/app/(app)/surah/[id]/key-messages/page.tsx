@@ -33,3 +33,12 @@ export default async function KeyMessagesPage({ params }: PageProps) {
 
   return <KeyMessagesView surah={surah} keyMessages={keyMessages} />;
 }
+
+// Pre-build all 114 surah pages at build time (required for static export / Capacitor)
+export async function generateStaticParams() {
+  return Array.from({ length: 114 }, (_, i) => ({
+    id: String(i + 1),
+  }));
+}
+
+export const dynamicParams = false;

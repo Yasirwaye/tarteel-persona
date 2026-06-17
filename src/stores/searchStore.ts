@@ -49,9 +49,9 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
   recentQueries: [],
 
   setBuilding: (v) => set({ isBuilding: v }),
-  setProgress: (v) => set({ buildProgress: v }),
+  setProgress: (loaded: number, total?: number) => set({ buildProgress: total ? Math.round((loaded / total) * 100) : loaded }),
   setReady: (v) => set({ isReady: v }),
-  setVerses: (verses) => set({ verses }),
+  setVerses: (verses) => set({ verses, isReady: true, isBuilding: false, buildProgress: 100 }),
 
   addRecentQuery: (query) => {
     const q = query.trim();

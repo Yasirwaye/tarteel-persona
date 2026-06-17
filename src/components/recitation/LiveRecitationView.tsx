@@ -6,6 +6,8 @@ import { RotateCw } from "lucide-react";
 import { cn, toArabicNumeral } from "@/lib/utils";
 import type { LiveWord } from "@/hooks/useLiveRecitation";
 import type { FullAyah } from "@/lib/quran-api";
+import MushafView from "@/components/quran/MushafView";
+import { DEFAULT_READER_CONFIG } from "@/types/reader";
 
 interface Props {
   ayahs: FullAyah[];
@@ -88,14 +90,7 @@ export default function LiveRecitationView({
                 )}
               </div>
 
-              <AyahLine
-                ayahText={ayah.textUthmani}
-                ayahWords={ayahWords}
-                hideArabic={hideArabic}
-                isRecording={isRecording}
-                className="text-3xl md:text-4xl leading-loose"
-                wordSpacing="0.15em"
-              />
+              
 
               {showTranslation && (
                 <p className="text-xs text-surface-500 mt-4 leading-relaxed border-t border-white/[0.04] pt-3">
@@ -145,135 +140,44 @@ export default function LiveRecitationView({
     );
   }
 
+    // ============================================
+  // MUSHAF MODE — uses real QPC v1 mushaf view with active ayah highlight
   // ============================================
-  // MUSHAF MODE — matches reader exactly
-  // ============================================
-  const pages = (() => {
-    const grouped = new Map<number, FullAyah[]>();
-    ayahs.forEach((a) => {
-      if (!grouped.has(a.page)) grouped.set(a.page, []);
-      grouped.get(a.page)!.push(a);
-    });
-    return Array.from(grouped.entries())
-      .map(([page, list]) => ({ page, ayahs: list }))
-      .sort((a, b) => a.page - b.page);
-  })();
+  if (mode === "mushaf") {
+    // Compute current ayah from cursor position in the global word array
+    let currentRecitingAyah: number | null = null;
+    console.log('[MUSHAF] render state — isRecording:', isRecording, 'currentWordIndex:', currentWordIndex, 'words total:', words.length, 'first word ayah:', words[0]?.ayahNumber, 'current word:', words[currentWordIndex]);
+    if (isRecording && currentWordIndex >= 0 && currentWordIndex < words.length) {
+      const currentWord = words[currentWordIndex];
+      if (currentWord) {
+        currentRecitingAyah = currentWord.ayahNumber;
+      }
+    }
 
-  return (
-    <div className="space-y-6">
-      {pages.map((pageInfo, pageIdx) => {
+    return (
+      <div className="relative">
+        {isRecording && currentRecitingAyah !== null && (
+          <div className="mb-3 flex items-center justify-center gap-2 text-xs text-primary-400">
+            <span className="w-2 h-2 rounded-full bg-primary-400 animate-pulse" />
+            <span>Reciting verse {currentRecitingAyah}</span>
+          </div>
+        )}
+        <MushafView
+          surahId={surahId || 1}
+          ayahs={ayahs}
+          config={DEFAULT_READER_CONFIG}
+          activeAyah={currentRecitingAyah}
+          onActivate={() => {}}
+        />
+      </div>
+    );
+  }
 
-        return (
-          <motion.div
-            key={pageInfo.page}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className={cn(
-              "relative rounded-2xl overflow-hidden",
-              "bg-gradient-to-b from-amber-50/[0.02] to-amber-100/[0.01]",
-              "border border-amber-700/15",
-              "shadow-2xl"
-            )}
-          >
-            <div className="h-1 bg-gradient-to-r from-transparent via-gold-600/40 to-transparent" />
-
-            <div className="p-8 md:p-12">
-              {pageInfo.ayahs.some((a) => a.ayahNumber === 1) && (
-                <div className="text-center mb-6">
-                  <p className="text-xs text-gold-500/80 font-arabic tracking-widest">
-                    ﷽
-                  </p>
-                </div>
-              )}
-
-              {/* Continuous Arabic text — render ayahs inline preserving original Uthmani */}
-              <div
-                className="font-arabic text-3xl leading-[4] text-surface-100 text-justify"
-                dir="rtl"
-                style={{
-                  wordSpacing: "0.2em",
-                  textAlignLast: "center",
-                }}
-              >
-                {pageInfo.ayahs.map((ayah) => {
-                  const range = ayahWordRanges.find(
-                    (r) => r.ayahNumber === ayah.ayahNumber
-                  );
-                  if (!range) return null;
-                  const ayahWords = words.slice(range.start, range.end);
-
-                  return (
-                    <span key={ayah.ayahNumber}>
-                      <AyahInline
-                        ayahText={ayah.textUthmani}
-                        ayahWords={ayahWords}
-                        hideArabic={hideArabic}
-                        isRecording={isRecording}
-                      />
-                      <span className="inline-flex items-center justify-center mx-1 text-gold-500 text-lg align-middle">
-                        {" "}۝{toArabicNumeral(ayah.ayahNumber)}{" "}
-                      </span>
-                    </span>
-                  );
-                })}
-              </div>
-
-              <div className="mt-12 flex items-center justify-between text-xs text-surface-500 pt-6 border-t border-amber-700/10">
-                <span>Juz {pageInfo.ayahs[0]?.juz}</span>
-                <span className="font-mono text-gold-500/70">
-                  {pageInfo.page}
-                </span>
-                <span className="font-arabic text-base text-gold-500/70">
-                  {toArabicNumeral(pageInfo.page)}
-                </span>
-              </div>
-            </div>
-
-            <div className="h-1 bg-gradient-to-r from-transparent via-gold-600/40 to-transparent" />
-          </motion.div>
-        );
-      })}
-    </div>
-  );
+  // Fallback (should not normally reach here)
+  return null;
 }
 
-// ============================================
-// AYAH LINE — block-level rendering (Translation mode)
-// Preserves original Uthmani text with spacing
-// ============================================
-interface AyahLineProps {
-  ayahText: string;
-  ayahWords: LiveWord[];
-  hideArabic: boolean;
-  isRecording: boolean;
-  className?: string;
-  wordSpacing?: string;
-}
 
-function AyahLine({
-  ayahText,
-  ayahWords,
-  hideArabic,
-  isRecording,
-  className,
-  wordSpacing,
-}: AyahLineProps) {
-  return (
-    <div
-      className={cn("font-arabic text-right text-surface-100", className)}
-      dir="rtl"
-      style={{ wordSpacing }}
-    >
-      <AyahInline
-        ayahText={ayahText}
-        ayahWords={ayahWords}
-        hideArabic={hideArabic}
-        isRecording={isRecording}
-      />
-    </div>
-  );
-}
 
 // ============================================
 // AYAH INLINE — renders ayah preserving original spacing

@@ -28,3 +28,13 @@ export default async function RecitationDetailPage({ params }: PageProps) {
 
   return <RecitationSession surah={surah} />;
 }
+
+// Pre-build all 114 surah pages at build time (required for static export / Capacitor)
+export async function generateStaticParams() {
+  return Array.from({ length: 114 }, (_, i) => ({
+    surahId: String(i + 1),
+  }));
+}
+
+// Only IDs 1..114 are valid; anything else 404s
+export const dynamicParams = false;

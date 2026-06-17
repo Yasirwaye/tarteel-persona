@@ -2,29 +2,84 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { usePrayerStore, PRAYER_NAMES, type PrayerName } from "@/stores/prayerStore";
+import {
+  usePrayerStore,
+  PRAYER_NAMES,
+  type PrayerName,
+} from "@/stores/prayerStore";
 import { toast } from "sonner";
+import { isNative } from "@/lib/platform";
+import {
+  initNativeNotifications,
+  scheduleAllPrayerNotifications,
+  requestNativePermission,
+  checkNativePermission,
+  testNativeAdhan,
+} from "@/lib/nativeNotifications";
 
 const ADHAN_AUDIO_PATH = "/audio/adhan-short.mp3";
 
+/**
+ * Hook that wires up prayer notifications.
+ * - Native (Android/iOS): uses OS-level scheduled local notifications.
+ *   These fire reliably even when app is closed and phone is locked.
+ * - Web: uses Notification API + setTimeout (only works while a tab is open).
+ */
 export function usePrayerNotifications() {
   const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    // Initialize audio element
+    // ────────────────────────── NATIVE PATH ──────────────────────────
+    if (isNative()) {
+      let cleanup: (() => void) | null = null;
+
+      (async () => {
+        // 1. Set up channels + tap handler
+        cleanup = await initNativeNotifications((extra) => {
+          // User tapped a prayer notification → if "full" mode, autoplay full adhan
+          if (extra.openFullAdhan && typeof window !== "undefined") {
+            const audio = new Audio(ADHAN_AUDIO_PATH);
+            audio.play().catch((e) =>
+              console.warn("[Adhan] full playback failed:", e)
+            );
+          }
+        });
+
+        // 2. Initial schedule
+        await scheduleAllPrayerNotifications();
+      })();
+
+      // 3. Re-schedule when settings change
+      const unsubscribe = usePrayerStore.subscribe((state, prev) => {
+        if (
+          state.times !== prev.times ||
+          state.notificationsEnabled !== prev.notificationsEnabled ||
+          state.adhanMode !== prev.adhanMode ||
+          state.enabledPrayers !== prev.enabledPrayers
+        ) {
+          scheduleAllPrayerNotifications();
+        }
+      });
+
+      return () => {
+        cleanup?.();
+        unsubscribe();
+      };
+    }
+
+    // ────────────────────────── WEB PATH (unchanged behaviour) ──────────────────────────
     if (typeof window !== "undefined" && !audioRef.current) {
       audioRef.current = new Audio(ADHAN_AUDIO_PATH);
       audioRef.current.preload = "auto";
     }
 
-    const scheduleNotifications = () => {
-      // Clear any existing scheduled notifications
+    const scheduleWebNotifications = () => {
       timeoutsRef.current.forEach((t) => clearTimeout(t));
       timeoutsRef.current = [];
 
       const state = usePrayerStore.getState();
-      const { times, notificationsEnabled, adhanEnabled, enabledPrayers } = state;
+      const { times, notificationsEnabled, adhanMode, enabledPrayers } = state;
 
       if (!times || !notificationsEnabled) return;
 
@@ -37,14 +92,11 @@ export function usePrayerNotifications() {
         const [h, m] = times[name].split(":").map(Number);
         const prayerTime = new Date(today);
         prayerTime.setHours(h, m, 0, 0);
-
-        // Skip if already passed
         if (prayerTime <= now) return;
 
         const msUntil = prayerTime.getTime() - now.getTime();
 
         const timeoutId = setTimeout(() => {
-          // Show browser notification
           if (
             typeof Notification !== "undefined" &&
             Notification.permission === "granted"
@@ -55,20 +107,17 @@ export function usePrayerNotifications() {
               badge: "/icons/icon-192.png",
               tag: `prayer-${name}`,
               requireInteraction: false,
-              silent: adhanEnabled, // silent if we're playing adhan (avoid double sound)
+              silent: adhanMode !== "silent",
             });
-
             setTimeout(() => notif.close(), 30000);
           }
 
-          // Show in-app toast too
           toast.success(`${name} Prayer Time`, {
             description: "Take a moment to pray",
             duration: 10000,
           });
 
-          // Play adhan if enabled
-          if (adhanEnabled && audioRef.current) {
+          if (adhanMode !== "silent" && audioRef.current) {
             audioRef.current.currentTime = 0;
             audioRef.current.play().catch((err) => {
               console.warn("[Adhan] Playback failed:", err);
@@ -82,31 +131,27 @@ export function usePrayerNotifications() {
       // Reschedule at midnight
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 5, 0); // 5 seconds after midnight
+      tomorrow.setHours(0, 0, 5, 0);
       const msUntilMidnight = tomorrow.getTime() - now.getTime();
-
       const midnightTimeout = setTimeout(() => {
         usePrayerStore.getState().fetchTimes(true);
-        scheduleNotifications();
+        scheduleWebNotifications();
       }, msUntilMidnight);
-
       timeoutsRef.current.push(midnightTimeout);
     };
 
-    // Subscribe to relevant state changes
     const unsubscribe = usePrayerStore.subscribe((state, prev) => {
       if (
         state.times !== prev.times ||
         state.notificationsEnabled !== prev.notificationsEnabled ||
-        state.adhanEnabled !== prev.adhanEnabled ||
+        state.adhanMode !== prev.adhanMode ||
         state.enabledPrayers !== prev.enabledPrayers
       ) {
-        scheduleNotifications();
+        scheduleWebNotifications();
       }
     });
 
-    // Initial schedule
-    scheduleNotifications();
+    scheduleWebNotifications();
 
     return () => {
       timeoutsRef.current.forEach((t) => clearTimeout(t));
@@ -116,31 +161,49 @@ export function usePrayerNotifications() {
 }
 
 /**
- * Request browser notification permission
+ * Request notification permission — branches native/web.
  */
 export async function requestNotificationPermission(): Promise<boolean> {
+  if (isNative()) {
+    const granted = await requestNativePermission();
+    if (!granted) toast.error("Notifications denied — enable in system settings");
+    return granted;
+  }
+
   if (typeof Notification === "undefined") {
     toast.error("Notifications not supported in this browser");
     return false;
   }
-
   if (Notification.permission === "granted") return true;
   if (Notification.permission === "denied") {
     toast.error("Notifications blocked — enable in browser settings");
     return false;
   }
-
   const result = await Notification.requestPermission();
   return result === "granted";
 }
 
 /**
- * Test the adhan audio (play immediately)
+ * Test the adhan — branches native/web.
  */
 export function testAdhan() {
+  if (isNative()) {
+    testNativeAdhan().catch((e) => {
+      console.warn("[Adhan] native test failed:", e);
+      toast.error("Could not schedule test adhan");
+    });
+    toast.success("Test adhan scheduled — fires in ~1 second");
+    return;
+  }
+
   const audio = new Audio(ADHAN_AUDIO_PATH);
   audio.play().catch((err) => {
     console.warn("[Adhan] Test playback failed:", err);
     toast.error("Could not play adhan");
   });
 }
+
+/**
+ * Re-export the permission checker for UI to query current state.
+ */
+export { checkNativePermission };

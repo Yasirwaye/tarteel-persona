@@ -1,0 +1,1 @@
+self.__SSG_MANIFEST=new Set(["\u002Frecitation\u002F[surahId]","\u002Fsurah\u002F[id]","\u002Fsurah\u002F[id]\u002Fkey-messages"]);self.__SSG_MANIFEST_CB&&self.__SSG_MANIFEST_CB()

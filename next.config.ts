@@ -2,11 +2,14 @@
 import type { NextConfig } from "next";
 import withPWAInit from "next-pwa";
 
+const isNativeBuild = process.env.BUILD_TARGET === "native";
+
 const withPWA = withPWAInit({
   dest: "public",
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === "development",
+  // Disable PWA in dev and in native builds (Capacitor has its own runtime)
+  disable: process.env.NODE_ENV === "development" || isNativeBuild,
   runtimeCaching: [
     {
       urlPattern: /^https:\/\/everyayah\.com\/.*\.(mp3|ogg)$/i,
@@ -79,14 +82,25 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
-  images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "everyayah.com" },
-      { protocol: "https", hostname: "api.alquran.cloud" },
-      { protocol: "https", hostname: "api.quran.com" },
-    ],
-  },
+  // Native build → static HTML/JS bundle for Capacitor
+  ...(isNativeBuild
+    ? {
+        output: "export" as const,
+        distDir: "out",
+        // Capacitor serves files from filesystem — no image optimization possible
+        images: { unoptimized: true },
+        // Avoid trailing-slash routing issues on file:// protocol
+        trailingSlash: true,
+      }
+    : {
+        images: {
+          remotePatterns: [
+            { protocol: "https" as const, hostname: "everyayah.com" },
+            { protocol: "https" as const, hostname: "api.alquran.cloud" },
+            { protocol: "https" as const, hostname: "api.quran.com" },
+          ],
+        },
+      }),
 };
 
-// Cast to bypass type version mismatch between next-pwa's bundled types and Next.js 15
 export default withPWA(nextConfig as Parameters<typeof withPWA>[0]) as NextConfig;

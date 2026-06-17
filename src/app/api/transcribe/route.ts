@@ -1,4 +1,5 @@
 // src/app/api/transcribe/route.ts
+import { withCors, corsPreflight } from "@/lib/cors";
 export const maxDuration = 60;
 export const runtime = "nodejs";
 
@@ -7,7 +8,7 @@ export async function POST(req: Request) {
     if (!process.env.GROQ_API_KEY) {
       return new Response(
         JSON.stringify({ error: "GROQ_API_KEY is not set in .env.local" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        { status: 500, headers: withCors({ "Content-Type": "application/json" }) }
       );
     }
 
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
     if (!audioFile) {
       return new Response(
         JSON.stringify({ error: "No audio file provided" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        { status: 400, headers: withCors({ "Content-Type": "application/json" }) }
       );
     }
 
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
         }),
         {
           status: groqResponse.status,
-          headers: { "Content-Type": "application/json" },
+          headers: withCors({ "Content-Type": "application/json" }),
         }
       );
     }
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
         language: data.language,
         segments: data.segments,
       }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+      { status: 200, headers: withCors({ "Content-Type": "application/json" }) }
     );
   } catch (error) {
     console.error("Transcribe error:", error);
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
         error:
           error instanceof Error ? error.message : "Transcription failed",
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: withCors({ "Content-Type": "application/json" }) }
     );
   }
 }
@@ -88,6 +89,10 @@ export async function GET() {
       apiKeySet: !!process.env.GROQ_API_KEY,
       model: "whisper-large-v3",
     }),
-    { status: 200, headers: { "Content-Type": "application/json" } }
+    { status: 200, headers: withCors({ "Content-Type": "application/json" }) }
   );
+}
+
+export async function OPTIONS() {
+  return corsPreflight();
 }

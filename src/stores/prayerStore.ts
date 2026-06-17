@@ -17,6 +17,8 @@ export interface PrayerTimes {
 export const PRAYER_NAMES = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"] as const;
 export type PrayerName = typeof PRAYER_NAMES[number];
 
+export type AdhanMode = "silent" | "short" | "full";
+
 interface PrayerState {
   times: PrayerTimes | null;
   city: string;
@@ -24,6 +26,8 @@ interface PrayerState {
   lastFetchedAt: number;
 
   notificationsEnabled: boolean;
+  adhanMode: AdhanMode;
+  /** @deprecated kept for back-compat; use adhanMode */
   adhanEnabled: boolean;
   enabledPrayers: Record<PrayerName, boolean>;
 
@@ -31,6 +35,8 @@ interface PrayerState {
   fetchTimes: (force?: boolean) => Promise<void>;
   setLocation: (city: string, country: string) => void;
   setNotificationsEnabled: (v: boolean) => void;
+  setAdhanMode: (mode: AdhanMode) => void;
+  /** @deprecated use setAdhanMode */
   setAdhanEnabled: (v: boolean) => void;
   togglePrayer: (prayer: PrayerName) => void;
 }
@@ -47,6 +53,7 @@ export const usePrayerStore = create<PrayerState>()(
       lastFetchedAt: 0,
 
       notificationsEnabled: false,
+      adhanMode: "short" as AdhanMode,
       adhanEnabled: true,
       enabledPrayers: {
         Fajr: true,
@@ -98,7 +105,8 @@ export const usePrayerStore = create<PrayerState>()(
       },
 
       setNotificationsEnabled: (v) => set({ notificationsEnabled: v }),
-      setAdhanEnabled: (v) => set({ adhanEnabled: v }),
+      setAdhanMode: (mode) => set({ adhanMode: mode, adhanEnabled: mode !== "silent" }),
+      setAdhanEnabled: (v) => set({ adhanEnabled: v, adhanMode: v ? "short" : "silent" }),
 
       togglePrayer: (prayer) =>
         set((state) => ({
@@ -117,6 +125,7 @@ export const usePrayerStore = create<PrayerState>()(
         lastFetchedAt: state.lastFetchedAt,
         notificationsEnabled: state.notificationsEnabled,
         adhanEnabled: state.adhanEnabled,
+        adhanMode: state.adhanMode,
         enabledPrayers: state.enabledPrayers,
       }),
     }
