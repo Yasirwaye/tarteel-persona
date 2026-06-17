@@ -125,25 +125,16 @@
 
 
 /* Make the mushaf font heavier for better readability at large size */
-.mushaf-page-text {
-  font-weight: 400;
-}
+
 
 /* Larger font on tablets/desktop for proper mushaf feel */
 @media (min-width: 768px) {
-  .mushaf-page-text {
-    font-size: 2rem !important;
-    line-height: 2.8 !important;
-    word-spacing: 0.55em !important;
-  }
+  
 }
 
 /* Even larger on big screens */
 @media (min-width: 1280px) {
-  .mushaf-page-text {
-    font-size: 2.25rem !important;
-    line-height: 3 !important;
-  }
+  
 }
 
 /* On narrow screens, allow horizontal scroll as last resort */
@@ -175,19 +166,24 @@
 
 
 
-/* ── Mushaf typography & scaling (fixed for mobile) ───────────── */
+
+/* Mobile scaling — scale + use negative margins to compensate for scaling space */
+
+
+
+
+
+/* ── Mushaf typography (simple version with side spaces on mobile) ──── */
 
 .mushaf-scale-wrapper {
   width: 100%;
   display: flex;
   justify-content: center;
-  /* IMPORTANT: don't clip — let scaled content show fully */
-  overflow: visible;
 }
 
 .mushaf-scale-container {
   width: 680px;
-  flex-shrink: 0;
+  max-width: 100%;
 }
 
 .mushaf-scale-container > div {
@@ -195,29 +191,24 @@
   line-height: 2.2;
 }
 
-/* Mobile scaling — scale + use negative margins to compensate for scaling space */
-@media (max-width: 719px) {
-  .mushaf-scale-wrapper {
-    /* Allow horizontal overflow to be visible (not clipped) */
-    overflow: hidden;
-    /* Wrapper takes natural width */
-    width: 100%;
+/* On smaller screens, just shrink font — keeps spaces on both sides */
+@media (max-width: 768px) {
+  .mushaf-scale-container > div {
+    font-size: 1.25rem !important;
+    line-height: 2 !important;
   }
+}
 
-  .mushaf-scale-container {
-    /* Scale to fit available width with safe padding */
-    transform-origin: top right;
-    transform: scale(calc((100vw - 24px) / 680));
-    /* Critical: compensate for scaled width so flow is correct */
-    margin-left: calc((100vw - 24px) - 680px);
-    /* Compensate vertical space the scale "eats" */
-    margin-bottom: calc(((100vw - 24px) / 680 - 1) * 100%);
+@media (max-width: 480px) {
+  .mushaf-scale-container > div {
+    font-size: 1.05rem !important;
+    line-height: 1.9 !important;
   }
 }
 
 @media (max-width: 380px) {
-  .mushaf-scale-container {
-    transform: scale(calc((100vw - 16px) / 680));
-    margin-left: calc((100vw - 16px) - 680px);
+  .mushaf-scale-container > div {
+    font-size: 0.95rem !important;
+    line-height: 1.85 !important;
   }
 }
