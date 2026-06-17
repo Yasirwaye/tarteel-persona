@@ -3,14 +3,25 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Loader2, Moon, Sun } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Moon, Sun, Maximize2, Minimize2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAudioStore } from "@/stores/audioStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { surahsMetadata } from "@/data/quran/metadata/surahs";
+import SurahBanner from "./SurahBanner";
 import { getJuzForAyah, getHizbForAyah } from "@/data/quran/metadata/juz";
 import type { FullAyah } from "@/lib/quran-api";
 import type { ReaderConfig } from "@/types/reader";
+import {
+  fetchMadaniPage,
+  preloadAdjacentPagesData,
+  type MadaniPage,
+} from "@/lib/madaniData";
+import {
+  loadPageFont,
+  preloadAdjacentPages,
+  getPageFontFamily,
+} from "@/lib/madaniFonts";
 
 interface MushafViewProps {
   surahId: number;
@@ -26,54 +37,87 @@ export default function MushafView({
   activeAyah,
   onActivate,
 }: MushafViewProps) {
-  // Group ayahs by page
-  const pages = useMemo(() => {
-    const grouped = new Map<number, FullAyah[]>();
-    ayahs.forEach((a) => {
-      if (!grouped.has(a.page)) grouped.set(a.page, []);
-      grouped.get(a.page)!.push(a);
-    });
-    return Array.from(grouped.entries())
-      .map(([page, list]) => ({ page, ayahs: list }))
-      .sort((a, b) => a.page - b.page);
+  // Get list of unique pages from ayahs
+  const pageNumbers = useMemo(() => {
+    const set = new Set<number>();
+    ayahs.forEach((a) => set.add(a.page));
+    return Array.from(set).sort((a, b) => a - b);
   }, [ayahs]);
 
   const [pageIndex, setPageIndex] = useState(0);
-  const pageContainerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // ESC key exits fullscreen
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isFullscreen]);
+
+  // Lock body scroll when in fullscreen
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (isFullscreen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isFullscreen]);
+  const [madaniPage, setMadaniPage] = useState<MadaniPage | null>(null);
+  const [loadingPage, setLoadingPage] = useState(true);
 
   const { currentSurahId, currentAyahNumber } = useAudioStore();
   const mushafTheme = useSettingsStore((s) => s.mushafTheme);
   const setMushafTheme = useSettingsStore((s) => s.setMushafTheme);
 
-  const isPlayingThisSurah =
-    currentSurahId === surahId && currentAyahNumber !== null;
-
   const surah = surahsMetadata.find((s) => s.id === surahId);
+  const currentPageNumber = pageNumbers[pageIndex];
 
-  // Auto-flip page
+  // Load page data + font when page changes
   useEffect(() => {
-    if (!isPlayingThisSurah || currentAyahNumber === null) return;
-    const pageWithAyah = pages.findIndex((p) =>
-      p.ayahs.some((a) => a.ayahNumber === currentAyahNumber)
-    );
-    if (pageWithAyah !== -1 && pageWithAyah !== pageIndex) {
-      setPageIndex(pageWithAyah);
+    if (!currentPageNumber) return;
+
+    let cancelled = false;
+    setLoadingPage(true);
+
+    Promise.all([
+      fetchMadaniPage(currentPageNumber),
+      loadPageFont(currentPageNumber),
+    ]).then(([pageData]) => {
+      if (cancelled) return;
+      setMadaniPage(pageData);
+      setLoadingPage(false);
+
+      // Preload adjacent
+      preloadAdjacentPagesData(currentPageNumber);
+      preloadAdjacentPages(currentPageNumber);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPageNumber]);
+
+  // Auto-flip page when audio plays an ayah on different page
+  useEffect(() => {
+    if (currentSurahId !== surahId || currentAyahNumber === null) return;
+
+    const playingAyah = ayahs.find((a) => a.ayahNumber === currentAyahNumber);
+    if (!playingAyah) return;
+
+    const targetIndex = pageNumbers.indexOf(playingAyah.page);
+    if (targetIndex !== -1 && targetIndex !== pageIndex) {
+      setPageIndex(targetIndex);
     }
-  }, [currentAyahNumber, isPlayingThisSurah, pages, pageIndex]);
+  }, [currentAyahNumber, currentSurahId, surahId, ayahs, pageNumbers, pageIndex]);
 
-  // Auto-scroll to playing verse
-  useEffect(() => {
-    if (!isPlayingThisSurah || currentAyahNumber === null) return;
-    const timeout = setTimeout(() => {
-      const el = document.getElementById(`mushaf-ayah-${currentAyahNumber}`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [currentAyahNumber, isPlayingThisSurah, pageIndex]);
-
-  if (pages.length === 0) {
+  if (pageNumbers.length === 0) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="w-6 h-6 text-primary-400 animate-spin" />
@@ -81,16 +125,17 @@ export default function MushafView({
     );
   }
 
-  const currentPage = pages[pageIndex];
-  if (!currentPage) return null;
-
   const isFirstPage = pageIndex === 0;
-  const isLastPage = pageIndex === pages.length - 1;
+  const isLastPage = pageIndex === pageNumbers.length - 1;
 
-  // Compute juz/hizb for first ayah on this page
-  const firstAyah = currentPage.ayahs[0];
-  const juz = getJuzForAyah(surahId, firstAyah.ayahNumber);
-  const hizb = getHizbForAyah(surahId, firstAyah.ayahNumber);
+  // Compute juz/hizb from first ayah of this page
+  const firstAyahOnPage = ayahs.find((a) => a.page === currentPageNumber);
+  const juz = firstAyahOnPage
+    ? getJuzForAyah(surahId, firstAyahOnPage.ayahNumber)
+    : 1;
+  const hizb = firstAyahOnPage
+    ? getHizbForAyah(surahId, firstAyahOnPage.ayahNumber)
+    : 1;
 
   const isDark = mushafTheme === "dark";
 
@@ -101,7 +146,23 @@ export default function MushafView({
   const borderClass = isDark ? "border-white/10" : "border-black/10";
 
   return (
-    <div className="pb-20" ref={pageContainerRef}>
+    <div
+      className={cn(
+        isFullscreen
+          ? "fixed inset-0 z-[100] bg-surface-950 overflow-y-auto p-4 md:p-8"
+          : "pb-20"
+      )}
+    >
+      {isFullscreen && (
+        <button
+          onClick={() => setIsFullscreen(false)}
+          className="fixed top-4 right-4 z-[110] w-10 h-10 rounded-full bg-surface-800/80 hover:bg-surface-700 border border-white/[0.1] flex items-center justify-center text-surface-300 hover:text-surface-100 transition-all backdrop-blur-xl shadow-xl"
+          title="Exit fullscreen (ESC)"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      )}
+      <div className={isFullscreen ? "max-w-4xl mx-auto" : ""}>
       {/* Page nav + theme toggle */}
       <div className="flex items-center justify-between mb-4 px-1">
         <button
@@ -122,14 +183,28 @@ export default function MushafView({
           <div className="text-xs text-surface-500">
             <span>Page </span>
             <span className="text-primary-400 font-mono font-bold">
-              {currentPage.page}
+              {currentPageNumber}
             </span>
             <span className="text-surface-600 ml-1">
-              ({pageIndex + 1}/{pages.length})
+              ({pageIndex + 1}/{pageNumbers.length})
             </span>
           </div>
 
-          {/* Mushaf theme toggle */}
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-surface-800/60 border border-white/[0.06] text-surface-300 hover:text-surface-100 transition-all"
+            title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          >
+            {isFullscreen ? (
+              <Minimize2 className="w-3.5 h-3.5" />
+            ) : (
+              <Maximize2 className="w-3.5 h-3.5" />
+            )}
+            <span className="hidden sm:inline">
+              {isFullscreen ? "Exit" : "Focus"}
+            </span>
+          </button>
+
           <button
             onClick={() => setMushafTheme(isDark ? "light" : "dark")}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-surface-800/60 border border-white/[0.06] text-surface-300 hover:text-surface-100 transition-all"
@@ -140,9 +215,7 @@ export default function MushafView({
             ) : (
               <Moon className="w-3.5 h-3.5" />
             )}
-            <span className="hidden sm:inline">
-              {isDark ? "Light" : "Dark"}
-            </span>
+            <span className="hidden sm:inline">{isDark ? "Light" : "Dark"}</span>
           </button>
         </div>
 
@@ -161,9 +234,9 @@ export default function MushafView({
         </button>
       </div>
 
-      {/* Mushaf page — matches your screenshot */}
+      {/* Mushaf page */}
       <motion.div
-        key={`${currentPage.page}-${mushafTheme}`}
+        key={`${currentPageNumber}-${mushafTheme}`}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
@@ -173,7 +246,7 @@ export default function MushafView({
           borderClass
         )}
       >
-        {/* Top header bar: Surah name (left), Juz X · Hizb X (right) */}
+        {/* Top header: Surah name (left), Juz X · Hizb X (right) */}
         <div
           className={cn(
             "flex items-center justify-between px-6 py-4 border-b",
@@ -192,81 +265,133 @@ export default function MushafView({
           </div>
         </div>
 
-        {/* Bismillah */}
-        {currentPage.ayahs.some((a) => a.ayahNumber === 1) && surahId !== 9 && (
-          <div className="text-center pt-6 pb-2">
-            <p
-              className={cn(
-                "font-arabic text-2xl tracking-widest",
-                isDark ? "text-white/90" : "text-black/90"
-              )}
+        {/* 15-line mushaf content */}
+        <div className="px-4 md:px-8 py-8 min-h-[600px]">
+          {loadingPage || !madaniPage ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className={cn("w-6 h-6 animate-spin", subtleTextClass)} />
+            </div>
+          ) : (
+            <div
+              dir="rtl"
+              className={cn("space-y-4", textClass)}
+              style={{
+                fontFamily: getPageFontFamily(currentPageNumber),
+              }}
             >
-              ﷽
-            </p>
-          </div>
-        )}
+              {(() => {
+                // Track which surahs start on this page (ayahNumber === 1 for some word)
+                const surahsStartingOnPage = new Set<number>();
+                madaniPage.lines.forEach((line) => {
+                  line.words.forEach((w) => {
+                    if (w.ayahNumber === 1) surahsStartingOnPage.add(w.surahId);
+                  });
+                });
 
-        {/* Quran text */}
-        <div className="px-6 py-8 md:px-10 md:py-10">
-          <div
-            className={cn(
-              "font-arabic text-justify mushaf-page-text",
-              textClass
-            )}
-            dir="rtl"
-            style={{
-              fontSize: "1.75rem",
-              lineHeight: "2.6",
-              wordSpacing: "0.45em",
-              letterSpacing: "0.01em",
-              textAlignLast: "center",
-            }}
-          >
-            {currentPage.ayahs.map((ayah) => {
-              const isClickActive = activeAyah === ayah.ayahNumber;
-              const isPlayingNow =
-                currentSurahId === surahId &&
-                currentAyahNumber === ayah.ayahNumber;
+                // Track which surahs have already been rendered with banner
+                const renderedBanners = new Set<number>();
 
-              return (
-                <span
-                  key={ayah.ayahNumber}
-                  id={`mushaf-ayah-${ayah.ayahNumber}`}
-                  onClick={() =>
-                    onActivate(isClickActive ? null : ayah.ayahNumber)
+                return madaniPage.lines.map((line) => {
+                  const isCenteredLine = line.isCentered || line.words.length <= 2;
+
+                  // Check if this line contains the first ayah of a surah
+                  // that we haven't rendered a banner for yet
+                  const firstAyahWord = line.words.find(
+                    (w) => w.ayahNumber === 1 && surahsStartingOnPage.has(w.surahId) && !renderedBanners.has(w.surahId)
+                  );
+
+                  let banner = null;
+                  let bismillah = null;
+                  if (firstAyahWord) {
+                    renderedBanners.add(firstAyahWord.surahId);
+                    const startingSurah = surahsMetadata.find(
+                      (s) => s.id === firstAyahWord.surahId
+                    );
+                    if (startingSurah) {
+                      banner = (
+                        <SurahBanner
+                          key={`banner-${startingSurah.id}`}
+                          surahName={startingSurah.name}
+                          surahNameArabic={startingSurah.nameArabic}
+                          isDark={isDark}
+                        />
+                      );
+                      // Add bismillah for all surahs except At-Tawbah (9)
+                      if (startingSurah.id !== 9 && startingSurah.id !== 1) {
+                        bismillah = (
+                          <div
+                            key={`bismillah-${startingSurah.id}`}
+                            className={cn("text-center my-3", isDark ? "text-white/90" : "text-black/90")}
+                          >
+                            <p className="font-arabic text-2xl tracking-widest">﷽</p>
+                          </div>
+                        );
+                      }
+                    }
                   }
-                  className={cn(
-                    "cursor-pointer transition-all duration-300 rounded-md inline scroll-mt-32",
-                    isPlayingNow
-                      ? isDark
-                        ? "bg-white/15 px-1"
-                        : "bg-black/10 px-1"
-                      : isClickActive
-                      ? isDark
-                        ? "bg-white/8"
-                        : "bg-black/5"
-                      : isDark
-                      ? "hover:bg-white/5"
-                      : "hover:bg-black/5"
-                  )}
-                >
-                  {ayah.textUthmani}
-                  <span
-                    className={cn(
-                      "inline-block mx-2 font-arabic text-xl align-middle",
-                      isDark ? "text-white/70" : "text-black/70"
-                    )}
-                  >
-                    ﴿{toArabicDigits(ayah.ayahNumber)}﴾
-                  </span>
-                  {" "}
-                </span>
-              );
-            })}
-          </div>
+
+                  return (
+                    <div key={`line-wrapper-${line.lineNumber}`}>
+                      {banner}
+                      {bismillah}
+                      <div
+                        key={line.lineNumber}
+                        className={cn(
+                          "flex items-baseline w-full",
+                          isCenteredLine ? "justify-center" : "justify-between"
+                        )}
+                        style={{
+                          fontSize: "clamp(1.5rem, 4vw, 2.25rem)",
+                          lineHeight: 1.8,
+                        }}
+                      >
+                        {line.words.map((word, idx) => {
+                          const isPlayingNow =
+                            currentSurahId === surahId &&
+                            currentAyahNumber === word.ayahNumber;
+                          const isClickActive = activeAyah === word.ayahNumber;
+                          const isEndOfAyah = word.charType === "end";
+
+                          return (
+                            <span
+                              key={`${word.lineNumber}-${idx}`}
+                              id={
+                                idx === 0
+                                  ? `mushaf-ayah-${word.ayahNumber}`
+                                  : undefined
+                              }
+                              onClick={() =>
+                                onActivate(
+                                  isClickActive ? null : word.ayahNumber
+                                )
+                              }
+                              className={cn(
+                                "cursor-pointer transition-all rounded px-0.5",
+                                isPlayingNow &&
+                                  (isDark ? "bg-white/15" : "bg-black/10"),
+                                isClickActive &&
+                                  !isPlayingNow &&
+                                  (isDark ? "bg-white/8" : "bg-black/5"),
+                                !isPlayingNow &&
+                                  !isClickActive &&
+                                  (isDark ? "hover:bg-white/5" : "hover:bg-black/5"),
+                                isEndOfAyah && "mx-1"
+                              )}
+                            >
+                              {word.text}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
         </div>
 
-        {/* Bottom page number — matches your screenshot's "402" */}
+        {/* Bottom page number */}
         <div
           className={cn(
             "px-6 pb-4 pt-2 border-t flex items-center justify-center",
@@ -274,19 +399,11 @@ export default function MushafView({
           )}
         >
           <p className={cn("text-xs font-mono", subtleTextClass)}>
-            {currentPage.page}
+            {currentPageNumber}
           </p>
         </div>
       </motion.div>
+      </div>
     </div>
-  );
-}
-
-// Convert digit to Arabic-Indic numeral
-function toArabicDigits(n: number): string {
-  const arabicDigits = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-  return String(n)
-    .split("")
-    .map((d) => arabicDigits[parseInt(d, 10)] || d)
-    .join("");
+    );
 }
