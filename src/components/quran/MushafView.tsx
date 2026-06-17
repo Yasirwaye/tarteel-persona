@@ -273,12 +273,21 @@ export default function MushafView({
             </div>
           ) : (
             <div
-              dir="rtl"
-              className={cn("space-y-4", textClass)}
+              className="w-full overflow-hidden"
               style={{
-                fontFamily: getPageFontFamily(currentPageNumber),
+                // Container queries scale text to fit width
+                containerType: "inline-size",
               }}
             >
+              <div
+                dir="rtl"
+                className={cn("space-y-4 mx-auto mushaf-scale-container", textClass)}
+                style={{
+                  fontFamily: getPageFontFamily(currentPageNumber),
+                  width: "fit-content",
+                  maxWidth: "100%",
+                }}
+              >
               {(() => {
                 // Track which surahs start on this page (ayahNumber === 1 for some word)
                 const surahsStartingOnPage = new Set<number>();
@@ -341,8 +350,9 @@ export default function MushafView({
                           isCenteredLine ? "justify-center" : "justify-between"
                         )}
                         style={{
-                          fontSize: "clamp(1.5rem, 4vw, 2.25rem)",
-                          lineHeight: 1.8,
+                          fontSize: "1.75rem",
+                          lineHeight: 2.2,
+                          whiteSpace: "nowrap",
                         }}
                       >
                         {line.words.map((word, idx) => {
@@ -388,6 +398,7 @@ export default function MushafView({
                 });
               })()}
             </div>
+              </div>
           )}
         </div>
 

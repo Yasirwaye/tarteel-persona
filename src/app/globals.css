@@ -156,3 +156,21 @@
     line-height: 3 !important;
   }
 }
+
+/* ── Mushaf auto-scale to fit container width ─────────────────── */
+.mushaf-scale-container {
+  /* Scale down if content overflows container */
+  transform-origin: top center;
+  transform: scale(min(1, calc(100cqi / 800px)));
+}
+
+/* On narrow screens, allow horizontal scroll as last resort */
+@media (max-width: 480px) {
+  .mushaf-scale-container {
+    /* Force smaller base size on phones */
+    font-size: 1.25rem !important;
+  }
+  .mushaf-scale-container > div {
+    line-height: 2 !important;
+  }
+}
