@@ -52,9 +52,16 @@ export default function LiveRecitationView({
   })();
 
   // ============================================
-  // TRANSLATION MODE
+  // TRANSLATION MODE — shows Arabic with colored words + translation
+  // During/after recitation, each word lights up green/red/amber as it's matched
   // ============================================
   if (mode === "translation") {
+    // Find which ayah the cursor is currently on (for highlight ring)
+    const currentAyahNumber =
+      isRecording && currentWordIndex < words.length
+        ? words[currentWordIndex]?.ayahNumber
+        : null;
+
     return (
       <div className="space-y-3">
         {ayahs.map((ayah) => {
@@ -64,19 +71,40 @@ export default function LiveRecitationView({
           if (!range) return null;
           const ayahWords = words.slice(range.start, range.end);
           const hasFeedback = ayahWords.some((w) => w.status !== "pending");
+          const isCurrentlyReciting = currentAyahNumber === ayah.ayahNumber;
 
           return (
             <motion.div
               key={ayah.ayahNumber}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="group rounded-2xl p-4 md:p-6 border bg-surface-900/40 border-white/[0.04] transition-all"
+              className={cn(
+                "group rounded-2xl p-4 md:p-6 border bg-surface-900/40 transition-all",
+                isCurrentlyReciting
+                  ? "border-primary-600/50 shadow-glow"
+                  : hasFeedback
+                  ? "border-white/[0.08]"
+                  : "border-white/[0.04]"
+              )}
             >
               <div className="flex items-center justify-between mb-3">
-                <div className="w-8 h-8 rounded-full bg-surface-800/60 border border-white/[0.06] flex items-center justify-center">
-                  <span className="text-xs font-bold text-primary-400">
-                    {ayah.ayahNumber}
-                  </span>
+                <div className="flex items-center gap-2">
+                  <div className={cn(
+                    "w-8 h-8 rounded-full border flex items-center justify-center transition-all",
+                    isCurrentlyReciting
+                      ? "bg-primary-900/60 border-primary-600/50"
+                      : "bg-surface-800/60 border-white/[0.06]"
+                  )}>
+                    <span className="text-xs font-bold text-primary-400">
+                      {ayah.ayahNumber}
+                    </span>
+                  </div>
+                  {isCurrentlyReciting && (
+                    <span className="flex items-center gap-1 text-[10px] text-primary-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" />
+                      Reciting now
+                    </span>
+                  )}
                 </div>
                 {hasFeedback && onRetryAyah && !isRecording && (
                   <button
@@ -90,7 +118,19 @@ export default function LiveRecitationView({
                 )}
               </div>
 
-              
+              {/* Arabic verse with per-word coloring */}
+              <div
+                className="font-arabic text-2xl md:text-3xl text-right leading-[2.5] text-surface-100"
+                dir="rtl"
+                style={{ wordSpacing: "0.15em" }}
+              >
+                <AyahInline
+                  ayahText={ayah.textUthmani}
+                  ayahWords={ayahWords}
+                  hideArabic={hideArabic}
+                  isRecording={isRecording}
+                />
+              </div>
 
               {showTranslation && (
                 <p className="text-xs text-surface-500 mt-4 leading-relaxed border-t border-white/[0.04] pt-3">
@@ -168,6 +208,9 @@ export default function LiveRecitationView({
           config={DEFAULT_READER_CONFIG}
           activeAyah={currentRecitingAyah}
           onActivate={() => {}}
+          recitationWords={words}
+          isReciting={isRecording}
+          hideArabic={hideArabic}
         />
       </div>
     );

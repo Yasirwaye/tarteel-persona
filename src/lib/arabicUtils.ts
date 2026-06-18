@@ -155,20 +155,26 @@ export function compareRecitation(
     };
   }
 
-  // ===== DP TABLE =====
+  // ===== SEMI-GLOBAL DP =====
   // dp[i][j] = best score aligning expected[0..i] with spoken[0..j]
-  // Higher score = better alignment
+  // KEY: trailing gaps in expected are FREE (user stopped reciting early)
+  // This forces the alignment to start at expected[0] and prevents it from
+  // "skipping ahead" 4000+ words to find matches in later verses with
+  // similar words (Al-Baqarah repeats many phrases).
   const MATCH_SCORE = 2;
-  const MISMATCH_PENALTY = -1;
-  const GAP_PENALTY = -1;
+  const MISMATCH_PENALTY = -2;       // heavier — discourage random matches
+  const GAP_EXPECTED = -3;           // heavy penalty for skipping expected words
+  const GAP_SPOKEN = -1;             // small penalty for extra spoken words
 
   const dp: number[][] = Array.from({ length: m + 1 }, () =>
     new Array(n + 1).fill(0)
   );
 
-  // Gap-only rows/cols
-  for (let i = 0; i <= m; i++) dp[i][0] = i * GAP_PENALTY;
-  for (let j = 0; j <= n; j++) dp[0][j] = j * GAP_PENALTY;
+  // FORCE alignment to start at expected[0]:
+  // First column = heavy penalty for leaving expected words unmatched at START
+  for (let i = 0; i <= m; i++) dp[i][0] = i * GAP_EXPECTED;
+  // First row = small penalty for extra spoken words before any expected match
+  for (let j = 0; j <= n; j++) dp[0][j] = j * GAP_SPOKEN;
 
   // Fill DP table
   for (let i = 1; i <= m; i++) {
@@ -179,15 +185,26 @@ export function compareRecitation(
 
       dp[i][j] = Math.max(
         dp[i - 1][j - 1] + matchScore, // align
-        dp[i - 1][j] + GAP_PENALTY, // gap in spoken (= missed expected)
-        dp[i][j - 1] + GAP_PENALTY // gap in expected (= extra spoken)
+        dp[i - 1][j] + GAP_EXPECTED,   // skip expected word
+        dp[i][j - 1] + GAP_SPOKEN      // extra spoken word
       );
     }
   }
 
-  // ===== BACKTRACK =====
+  // ===== BACKTRACK from BEST END POSITION =====
+  // Find the row i* where dp[i*][n] is highest (= best place to "stop")
+  // This makes trailing expected words FREE — user can stop anywhere.
+  let bestEndI = m;
+  let bestEndScore = dp[m][n];
+  for (let i = 0; i <= m; i++) {
+    if (dp[i][n] > bestEndScore) {
+      bestEndScore = dp[i][n];
+      bestEndI = i;
+    }
+  }
+
   const alignment: ComparisonWord[] = [];
-  let i = m;
+  let i = bestEndI;
   let j = n;
 
   while (i > 0 || j > 0) {
@@ -210,8 +227,8 @@ export function compareRecitation(
       });
       i--;
       j--;
-    } else if (i > 0 && (j === 0 || dp[i][j] === dp[i - 1][j] + GAP_PENALTY)) {
-      // Up — gap in spoken, expected was missed
+    } else if (i > 0 && (j === 0 || dp[i][j] === dp[i - 1][j] + GAP_EXPECTED)) {
+      // Up — expected word skipped (missed)
       alignment.unshift({
         original: expected[i - 1],
         spoken: "",
@@ -220,7 +237,7 @@ export function compareRecitation(
       });
       i--;
     } else {
-      // Left — gap in expected, extra spoken word
+      // Left — extra spoken word
       alignment.unshift({
         original: "",
         spoken: spoken[j - 1],
@@ -242,8 +259,11 @@ export function compareRecitation(
   const extraCount = alignment.filter((w) => w.status === "extra").length;
 
   const totalExpected = m;
+  // attemptedCount = only words that were actually spoken (correct + incorrect)
+  // We do NOT penalise the user for words they never reached.
+  const attemptedCount = correctCount + incorrectCount;
   const accuracy =
-    totalExpected > 0 ? Math.round((correctCount / totalExpected) * 100) : 0;
+    attemptedCount > 0 ? Math.round((correctCount / attemptedCount) * 100) : 0;
 
   return {
     words: alignment,

@@ -143,8 +143,22 @@ export function useLiveRecitation({
           (w) => w.status !== "extra"
         );
 
+        // Find the LAST position where the alignment saw an actual spoken word
+        // (status "correct" or "incorrect"). Everything after that is end-of-input
+        // gap-filled "missed" — the user hasn't reached those words yet, so leave them pending.
+        let lastRealMatchIdx = -1;
+        for (let i = alignedExpected.length - 1; i >= 0; i--) {
+          const s = alignedExpected[i].status;
+          if (s === "correct" || s === "incorrect") {
+            lastRealMatchIdx = i;
+            break;
+          }
+        }
+
         const newWords = prev.words.map((w, idx) => {
-          if (idx < alignedExpected.length) {
+          // Only update words up to and including the last real match.
+          // Words beyond stay pending (user didn't recite that far).
+          if (idx <= lastRealMatchIdx && idx < alignedExpected.length) {
             const aligned = alignedExpected[idx];
             return {
               ...w,
@@ -155,20 +169,24 @@ export function useLiveRecitation({
           return w;
         });
 
-        // Find last touched index for cursor
-        let lastTouched = 0;
-        for (let i = newWords.length - 1; i >= 0; i--) {
-          if (newWords[i].status !== "pending") {
-            lastTouched = i + 1;
-            break;
-          }
-        }
+        // Cursor sits just past the last touched word
+        const cursor = lastRealMatchIdx + 1;
+
+        // Accuracy = correct / (correct + incorrect) — never divide by pending/missed words
+        // This ensures partial recitation scores fairly
+        const attempted = newWords.slice(0, cursor);
+        const correctInRange = attempted.filter((w) => w.status === "correct").length;
+        const incorrectInRange = attempted.filter((w) => w.status === "incorrect").length;
+        const spokenInRange = correctInRange + incorrectInRange;
+        const liveAccuracy = spokenInRange > 0
+          ? Math.round((correctInRange / spokenInRange) * 100)
+          : 0;
 
         return {
           ...prev,
           words: newWords,
-          currentWordIndex: lastTouched,
-          accuracy: comparison.accuracy,
+          currentWordIndex: cursor,
+          accuracy: liveAccuracy,
           spokenSoFar: transcript,
         };
       });

@@ -12,6 +12,7 @@ import SurahBanner from "./SurahBanner";
 import { getJuzForAyah, getHizbForAyah } from "@/data/quran/metadata/juz";
 import type { FullAyah } from "@/lib/quran-api";
 import type { ReaderConfig } from "@/types/reader";
+import type { LiveWord } from "@/hooks/useLiveRecitation";
 import {
   fetchMadaniPage,
   preloadAdjacentPagesData,
@@ -29,6 +30,11 @@ interface MushafViewProps {
   config: ReaderConfig;
   activeAyah: number | null;
   onActivate: (n: number | null) => void;
+  // Optional recitation feedback — when provided, mushaf words are colored by status
+  recitationWords?: LiveWord[];
+  isReciting?: boolean;
+  // When true, hide all Arabic glyphs except recited (pending words show as placeholders)
+  hideArabic?: boolean;
 }
 
 export default function MushafView({
@@ -36,7 +42,33 @@ export default function MushafView({
   ayahs,
   activeAyah,
   onActivate,
+  recitationWords,
+  isReciting,
+  hideArabic = false,
 }: MushafViewProps) {
+  // Build a lookup: "surahId:ayahNumber:wordIdxInAyah" → LiveWord status
+  // We count word positions PER AYAH (skipping end-of-ayah glyphs)
+  // because madaniPage words include ayah-end markers but our LiveWord array doesn't.
+  const recitationStatusMap = useMemo(() => {
+    const map = new Map<string, LiveWord["status"]>();
+    if (!recitationWords || recitationWords.length === 0) return map;
+
+    // Group LiveWords by surahId+ayahNumber, keep their order
+    const byAyah = new Map<string, LiveWord[]>();
+    for (const w of recitationWords) {
+      const key = `${w.surahId}:${w.ayahNumber}`;
+      if (!byAyah.has(key)) byAyah.set(key, []);
+      byAyah.get(key)!.push(w);
+    }
+
+    // Each ayah's LiveWords are in order — map by index
+    for (const [ayahKey, ws] of byAyah.entries()) {
+      ws.forEach((w, idx) => {
+        map.set(`${ayahKey}:${idx}`, w.status);
+      });
+    }
+    return map;
+  }, [recitationWords]);
   // Get list of unique pages from ayahs
   const pageNumbers = useMemo(() => {
     const set = new Set<number>();
@@ -343,12 +375,103 @@ export default function MushafView({
                         )}
                         
                       >
-                        {line.words.map((word, idx) => {
+                        {(() => {
+                          // Count word position within each ayah on this line
+                          // (skipping end-of-ayah markers since LiveWords don't include them)
+                          const ayahWordCounter = new Map<string, number>();
+                          // We also need to carry the count across lines — use a per-render
+                          // closure that tracks position from the start of the ayah on this page.
+                          // For simplicity: count from start of CURRENT line for this ayah.
+                          // Better: compute global index by scanning all prior lines too.
+
+                          return line.words.map((word, idx) => {
                           const isPlayingNow =
                             currentSurahId === surahId &&
                             currentAyahNumber === word.ayahNumber;
                           const isClickActive = activeAyah === word.ayahNumber;
                           const isEndOfAyah = word.charType === "end";
+
+                          // ── Recitation status lookup ──────────────────────
+                          // Compute this word's index WITHIN its ayah (across all lines on this page)
+                          let recitationStatus: LiveWord["status"] | undefined;
+                          if (recitationStatusMap.size > 0 && !isEndOfAyah) {
+                            // Count all non-end words of this ayah BEFORE this word on the page
+                            let wordIdxInAyah = 0;
+                            for (const l of madaniPage.lines) {
+                              for (const w of l.words) {
+                                if (w === word) break;
+                                if (
+                                  w.surahId === word.surahId &&
+                                  w.ayahNumber === word.ayahNumber &&
+                                  w.charType !== "end"
+                                ) {
+                                  wordIdxInAyah++;
+                                }
+                              }
+                              if (l === line) break;
+                            }
+                            const key = `${word.surahId}:${word.ayahNumber}:${wordIdxInAyah}`;
+                            recitationStatus = recitationStatusMap.get(key);
+                          }
+
+                          // Recitation color overrides playing/click highlights
+                          // Text color must contrast with mushaf bg:
+                          //   dark mushaf (black bg) → light text (-200 / -300)
+                          //   light mushaf (cream bg) → dark text (-800 / -900)
+                          const recitationBg = recitationStatus
+                            ? recitationStatus === "correct"
+                              ? isDark
+                                ? "bg-emerald-500/30 text-emerald-200"
+                                : "bg-emerald-500/40 text-emerald-900"
+                              : recitationStatus === "incorrect"
+                              ? isDark
+                                ? "bg-red-500/30 text-red-200 underline decoration-red-400/60 decoration-wavy"
+                                : "bg-red-500/40 text-red-900 underline decoration-red-700/70 decoration-wavy"
+                              : recitationStatus === "missed"
+                              ? isDark
+                                ? "bg-amber-500/25 text-amber-200"
+                                : "bg-amber-500/40 text-amber-900"
+                              : recitationStatus === "extra"
+                              ? isDark
+                                ? "bg-blue-500/25 text-blue-200"
+                                : "bg-blue-500/40 text-blue-900"
+                              : null
+                            : null;
+
+                          // ── Hide mode: pending words become opaque placeholders ──
+                          // Ayah-end markers stay visible (they're just decorative numerals)
+                          const shouldHide =
+                            hideArabic &&
+                            !isEndOfAyah &&
+                            (!recitationStatus || recitationStatus === "pending");
+
+                          if (shouldHide) {
+                            return (
+                              <span
+                                key={`${word.lineNumber}-${idx}`}
+                                id={
+                                  idx === 0
+                                    ? `mushaf-ayah-${word.ayahNumber}`
+                                    : undefined
+                                }
+                                onClick={() =>
+                                  onActivate(
+                                    isClickActive ? null : word.ayahNumber
+                                  )
+                                }
+                                className={cn(
+                                  "cursor-pointer transition-all rounded px-0.5 align-middle",
+                                  isDark
+                                    ? "bg-white/15 hover:bg-white/25"
+                                    : "bg-black/15 hover:bg-black/25"
+                                )}
+                                aria-label="hidden word"
+                              >
+                                {/* Keep the glyph in DOM but invisible so layout/spacing stays identical */}
+                                <span className="invisible">{word.text}</span>
+                              </span>
+                            );
+                          }
 
                           return (
                             <span
@@ -365,21 +488,24 @@ export default function MushafView({
                               }
                               className={cn(
                                 "cursor-pointer transition-all rounded px-0.5",
-                                isPlayingNow &&
-                                  (isDark ? "bg-white/15" : "bg-black/10"),
-                                isClickActive &&
-                                  !isPlayingNow &&
-                                  (isDark ? "bg-white/8" : "bg-black/5"),
-                                !isPlayingNow &&
-                                  !isClickActive &&
-                                  (isDark ? "hover:bg-white/5" : "hover:bg-black/5"),
+                                // Recitation status takes priority over other highlights
+                                recitationBg
+                                  ? recitationBg
+                                  : isPlayingNow
+                                  ? isDark ? "bg-white/15" : "bg-black/10"
+                                  : isClickActive
+                                  ? isDark ? "bg-white/8" : "bg-black/5"
+                                  : isDark
+                                  ? "hover:bg-white/5"
+                                  : "hover:bg-black/5",
                                 isEndOfAyah && "mx-1"
                               )}
                             >
                               {word.text}
                             </span>
                           );
-                        })}
+                        });
+                        })()}
                       </div>
                     </div>
                   );

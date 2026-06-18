@@ -135,23 +135,33 @@ export default function RecitationSession({ surah }: Props) {
         const lastAyah =
           attemptedWords[attemptedWords.length - 1]?.ayahNumber ?? 1;
 
-        const correctCount = words.filter((w) => w.status === "correct").length;
-        const incorrectCount = words.filter(
+        // currentWordIndex is already set by useLiveRecitation to lastRealMatchIdx + 1
+        // It only counts words the user actually reached — never pads with pending/missed
+        const attemptedCount = currentWordIndex; // 0 if user recited nothing
+        const countedWords = words.slice(0, attemptedCount);
+
+        const correctCount = countedWords.filter((w) => w.status === "correct").length;
+        const incorrectCount = countedWords.filter(
           (w) => w.status === "incorrect"
         ).length;
-        const missedCount = words.filter((w) => w.status === "missed").length;
+        const missedCount = countedWords.filter((w) => w.status === "missed").length;
+        // spokenCount = words user actually attempted (correct + incorrect)
+        // Never include "missed" (words never reached) in the denominator
+        const spokenCount = correctCount + incorrectCount;
 
         addAttempt({
           surahId: surah.id,
           surahName: surah.name,
           fromAyah: firstAyah,
           toAyah: lastAyah,
-          accuracy,
+          accuracy: spokenCount > 0
+            ? Math.round((correctCount / spokenCount) * 100)
+            : 0,
           correctCount,
           incorrectCount,
           missedCount,
           extraCount: 0,
-          totalExpected: attemptedWords.length,
+          totalExpected: attemptedCount,
           expectedText: words.map((w) => w.expected).join(" "),
           spokenText: spokenSoFar,
           duration,
@@ -328,7 +338,10 @@ export default function RecitationSession({ surah }: Props) {
               Words
             </p>
             <p className="text-sm font-bold text-surface-100">
-              {currentWordIndex} / {words.length}
+              {/* currentWordIndex = cursor set by useLiveRecitation = lastRealMatchIdx + 1 */}
+              {currentWordIndex > 0
+                ? `${currentWordIndex} / ${words.length}`
+                : `0 / ${words.length}`}
             </p>
           </div>
           <div className="glass rounded-xl px-3 py-2 text-center">

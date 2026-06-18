@@ -31,8 +31,16 @@ export async function POST(req: Request) {
     // whisper-large-v3-turbo is much faster for live use
     groqFormData.append("model", "whisper-large-v3-turbo");
     groqFormData.append("language", "ar");
-    groqFormData.append("response_format", "json");
-    groqFormData.append("temperature", "0");
+    groqFormData.append("response_format", "verbose_json");
+    // temperature 0 causes Whisper to hallucinate/repeat when audio is short/silent
+    // 0.2 gives more honest "I only heard X words" behaviour
+    groqFormData.append("temperature", "0.2");
+    // Prompt primes Whisper to expect Quranic Arabic — reduces hallucination
+    // and stops it from inventing words the user never said
+    groqFormData.append(
+      "prompt",
+      "بسم الله الرحمن الرحيم"
+    );
 
     const groqResponse = await fetch(
       "https://api.groq.com/openai/v1/audio/transcriptions",
@@ -59,8 +67,23 @@ export async function POST(req: Request) {
     }
 
     const data = await groqResponse.json();
+
+    // verbose_json gives us segments with no_speech_prob
+    // If Whisper itself thinks there was no speech, return empty
+    // This prevents hallucinated text from corrupting the score
+    let finalText = data.text || "";
+
+    if (data.segments && Array.isArray(data.segments)) {
+      const allSilent = data.segments.every(
+        (seg: { no_speech_prob?: number }) => (seg.no_speech_prob ?? 0) > 0.6
+      );
+      if (allSilent) {
+        finalText = "";
+      }
+    }
+
     return new Response(
-      JSON.stringify({ text: data.text || "" }),
+      JSON.stringify({ text: finalText }),
       { status: 200, headers: withCors({ "Content-Type": "application/json" }) }
     );
   } catch (error) {
