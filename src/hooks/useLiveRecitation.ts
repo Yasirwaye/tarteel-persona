@@ -16,6 +16,8 @@ export interface LiveWord {
   index: number;
   surahId: number;
   ayahNumber: number;
+
+  
 }
 
 export interface LiveRecitationState {
