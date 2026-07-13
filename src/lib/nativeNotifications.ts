@@ -141,10 +141,8 @@ export async function scheduleAllPrayerNotifications(): Promise<void> {
   }
 
   try {
-    // Set presentation options so it shows even if app is open
-    await LocalNotifications.setPresentationOptions({
-      presentationOptions: ["badge", "sound", "alert"],
-    });
+    // Note: iOS shows scheduled local notifications in foreground by default (iOS 14+)
+    // Android needs a notification channel (created in initNativeNotifications)
     await LocalNotifications.schedule({ notifications });
     console.log(`[NativeNotif] Scheduled ${notifications.length} prayer notifications`);
   } catch (err) {
