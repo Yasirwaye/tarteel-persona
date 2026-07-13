@@ -97,21 +97,27 @@ export function usePrayerNotifications() {
         const msUntil = prayerTime.getTime() - now.getTime();
 
         const timeoutId = setTimeout(() => {
-          if (
-            typeof Notification !== "undefined" &&
-            Notification.permission === "granted"
-          ) {
-            const notif = new Notification(`${name} Prayer Time`, {
-              body: `It's time for ${name} prayer in your area`,
-              icon: "/icons/icon-192.png",
-              badge: "/icons/icon-192.png",
-              tag: `prayer-${name}`,
-              requireInteraction: false,
-              silent: adhanMode !== "silent",
-            });
-            setTimeout(() => notif.close(), 30000);
+          // Try native browser notification (may not be available on iOS Safari, HTTP, etc.)
+          try {
+            if (
+              typeof Notification !== "undefined" &&
+              Notification.permission === "granted"
+            ) {
+              const notif = new Notification(`${name} Prayer Time`, {
+                body: `It's time for ${name} prayer in your area`,
+                icon: "/icons/icon-192.png",
+                badge: "/icons/icon-192.png",
+                tag: `prayer-${name}`,
+                requireInteraction: false,
+                silent: adhanMode !== "silent",
+              });
+              setTimeout(() => notif.close(), 30000);
+            }
+          } catch (err) {
+            console.warn("[Prayer] Native notification failed:", err);
           }
 
+          // ALWAYS show in-app toast (works even without native notification permission)
           toast.success(`${name} Prayer Time`, {
             description: "Take a moment to pray",
             duration: 10000,
@@ -161,26 +167,90 @@ export function usePrayerNotifications() {
 }
 
 /**
- * Request notification permission — branches native/web.
+ * Detect why notifications aren't available in the current browser context.
+ * Returns null if they ARE available.
+ */
+function detectNotificationBlocker(): string | null {
+  if (typeof window === "undefined") return "Not available server-side";
+
+  // iOS Safari: Notification API is undefined unless installed as PWA
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) && !("MSStream" in window);
+  const isStandalone =
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    (navigator as unknown as { standalone?: boolean }).standalone === true;
+
+  if (isIOS && !isStandalone) {
+    return "iOS requires installing as an app — tap Share → Add to Home Screen";
+  }
+
+  // Not HTTPS (except localhost)
+  const isSecure =
+    window.isSecureContext ||
+    location.hostname === "localhost" ||
+    location.hostname === "127.0.0.1";
+  if (!isSecure) {
+    return "Notifications require HTTPS — this site is not secure";
+  }
+
+  if (typeof Notification === "undefined") {
+    return "Your browser doesn't expose the Notification API. Try Chrome, Edge, or Firefox — or install this as an app.";
+  }
+
+  return null; // Available!
+}
+
+/**
+ * Request notification permission — branches native/web with smart fallbacks.
+ * Even when browser notifications aren't available, in-app toasts still work.
  */
 export async function requestNotificationPermission(): Promise<boolean> {
+  // ── Native app (Capacitor) ─────────────────────────────────────────
   if (isNative()) {
     const granted = await requestNativePermission();
     if (!granted) toast.error("Notifications denied — enable in system settings");
     return granted;
   }
 
-  if (typeof Notification === "undefined") {
-    toast.error("Notifications not supported in this browser");
-    return false;
+  // ── Web browser ────────────────────────────────────────────────────
+  const blocker = detectNotificationBlocker();
+
+  if (blocker) {
+    // Give the user useful info, not a dead-end error.
+    // Also let them know that in-app reminders still work.
+    toast.warning("Native notifications unavailable", {
+      description: `${blocker}\n\nGood news: in-app reminders will still work while this tab is open.`,
+      duration: 8000,
+    });
+    // Return true so the setting still enables — in-app toasts will fire on schedule.
+    return true;
   }
+
   if (Notification.permission === "granted") return true;
+
   if (Notification.permission === "denied") {
-    toast.error("Notifications blocked — enable in browser settings");
+    toast.error("Notifications blocked", {
+      description: "Enable them in your browser's site settings (click the lock icon in the address bar).",
+      duration: 8000,
+    });
     return false;
   }
+
   const result = await Notification.requestPermission();
-  return result === "granted";
+  if (result === "granted") {
+    toast.success("Notifications enabled");
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Check if native browser notifications are supported.
+ * Even when false, in-app toast reminders can still fire.
+ */
+export function isBrowserNotificationSupported(): boolean {
+  if (typeof window === "undefined") return false;
+  return detectNotificationBlocker() === null;
 }
 
 /**
@@ -201,6 +271,81 @@ export function testAdhan() {
     console.warn("[Adhan] Test playback failed:", err);
     toast.error("Could not play adhan");
   });
+}
+
+/**
+ * Fire a FULL prayer notification test in N seconds.
+ * Simulates exactly what happens at a real prayer time:
+ *   1. Native browser notification (if permission granted)
+ *   2. In-app toast
+ *   3. Adhan audio (if adhanMode !== "silent")
+ * Use this to validate end-to-end delivery on real devices.
+ */
+export function scheduleFullTestNotification(delaySeconds: number = 30) {
+  const state = usePrayerStoreForTest();
+  const adhanMode = state?.adhanMode ?? "short";
+  const testName = "Test";
+
+  toast.info(`Test notification scheduled`, {
+    description: `Fires in ${delaySeconds} seconds. Lock your phone to test background delivery.`,
+    duration: 5000,
+  });
+
+  setTimeout(() => {
+    // 1. Try native browser notification
+    let nativeShown = false;
+    try {
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        const notif = new Notification(`${testName} Prayer Time`, {
+          body: `This is a test notification — everything is working!`,
+          icon: "/icons/icon-192.png",
+          badge: "/icons/icon-192.png",
+          tag: `prayer-test`,
+          requireInteraction: false,
+          silent: adhanMode === "silent",
+        });
+        setTimeout(() => notif.close(), 30000);
+        nativeShown = true;
+      }
+    } catch (err) {
+      console.warn("[TestNotif] Native failed:", err);
+    }
+
+    // 2. Always show in-app toast
+    toast.success(`${testName} Prayer Time (TEST)`, {
+      description: nativeShown
+        ? "Native notification also sent ✓"
+        : "Native notification not available — in-app only",
+      duration: 10000,
+    });
+
+    // 3. Play adhan if configured
+    if (adhanMode !== "silent") {
+      try {
+        const audio = new Audio(ADHAN_AUDIO_PATH);
+        audio.play().catch((err) => {
+          console.warn("[TestNotif] Audio failed:", err);
+          toast.warning("Adhan audio blocked", {
+            description: "Browser blocked auto-play. Tap the app before scheduling next time.",
+          });
+        });
+      } catch (err) {
+        console.warn("[TestNotif] Audio error:", err);
+      }
+    }
+  }, delaySeconds * 1000);
+}
+
+// Helper to safely read prayer store (avoids circular imports)
+function usePrayerStoreForTest() {
+  try {
+    return usePrayerStore.getState();
+  } catch {
+    return null;
+  }
 }
 
 /**

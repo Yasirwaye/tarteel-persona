@@ -1,7 +1,7 @@
 // src/components/quran/AyahDisplay.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Play,
@@ -51,6 +51,24 @@ export default function AyahDisplay({
   const [copied, setCopied] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [rangeDialogOpen, setRangeDialogOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [menuOpen]);
 
   const { isBookmarked, toggleBookmark } = useBookmarkStore();
   const bookmarked = isBookmarked(ayah.surahId, ayah.ayahNumber);
@@ -159,13 +177,10 @@ export default function AyahDisplay({
               {ayah.ayahNumber}
             </button>
 
-            <div
-              className={cn(
-                "flex items-center gap-1 transition-all duration-200",
-                "opacity-0 group-hover:opacity-100",
-                (isActive || isThisPlaying) && "opacity-100"
-              )}
-            >
+            {/* Controls: mobile shows Play + Bookmark + More (dropdown) always visible */}
+            {/* Desktop shows all 5 on hover/active */}
+            <div className="flex items-center gap-1">
+              {/* PLAY — always visible on all screens */}
               <button
                 onClick={(e) => {
                   if (e.shiftKey || e.altKey) {
@@ -179,7 +194,7 @@ export default function AyahDisplay({
                   "p-2 rounded-xl transition-all",
                   showPlaying
                     ? "bg-primary-700/40 text-primary-200"
-                    : "text-surface-500 hover:bg-surface-800/60 hover:text-surface-200"
+                    : "text-surface-400 hover:bg-surface-800/60 hover:text-surface-200"
                 )}
                 title={
                   showPlaying
@@ -196,52 +211,140 @@ export default function AyahDisplay({
                 )}
               </button>
 
-              <button
-                onClick={handleRepeat}
-                className={cn(
-                  "p-2 rounded-xl transition-all",
-                  isThisPlaying && repeatMode === "verse"
-                    ? "bg-primary-700/40 text-primary-200"
-                    : "text-surface-500 hover:bg-surface-800/60 hover:text-surface-200"
-                )}
-                title="Repeat this verse"
-              >
-                <Repeat className="w-4 h-4" />
-              </button>
-
+              {/* BOOKMARK — always visible */}
               <button
                 onClick={handleBookmark}
                 className={cn(
                   "p-2 rounded-xl transition-all",
                   bookmarked
                     ? "text-primary-400 bg-primary-900/30"
-                    : "text-surface-500 hover:bg-surface-800/60 hover:text-surface-200"
+                    : "text-surface-400 hover:bg-surface-800/60 hover:text-surface-200"
                 )}
+                title={bookmarked ? "Remove bookmark" : "Bookmark"}
               >
                 <Bookmark
                   className={cn("w-4 h-4", bookmarked && "fill-current")}
                 />
               </button>
 
-              <button
-                onClick={() => setNoteOpen(true)}
-                className="p-2 rounded-xl text-surface-500 hover:bg-surface-800/60 hover:text-surface-200 transition-all"
-              >
-                <StickyNote className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={handleCopy}
-                className="p-2 rounded-xl text-surface-500 hover:bg-surface-800/60 hover:text-surface-200 transition-all"
-              >
-                {copied ? (
-                  <Check className="w-4 h-4 text-emerald-400" />
-                ) : (
-                  <Copy className="w-4 h-4" />
+              {/* DESKTOP-ONLY inline buttons (hidden on mobile, visible on md+) */}
+              <div
+                className={cn(
+                  "hidden md:flex items-center gap-1 transition-opacity",
+                  "opacity-0 group-hover:opacity-100",
+                  (isActive || isThisPlaying) && "opacity-100"
                 )}
-              </button>
+              >
+                <button
+                  onClick={handleRepeat}
+                  className={cn(
+                    "p-2 rounded-xl transition-all",
+                    isThisPlaying && repeatMode === "verse"
+                      ? "bg-primary-700/40 text-primary-200"
+                      : "text-surface-400 hover:bg-surface-800/60 hover:text-surface-200"
+                  )}
+                  title="Repeat this verse"
+                >
+                  <Repeat className="w-4 h-4" />
+                </button>
 
-              <button className="p-2 rounded-xl text-surface-500 hover:bg-surface-800/60 hover:text-surface-200 transition-all">
+                <button
+                  onClick={() => setNoteOpen(true)}
+                  className="p-2 rounded-xl text-surface-400 hover:bg-surface-800/60 hover:text-surface-200 transition-all"
+                  title="Add note"
+                >
+                  <StickyNote className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={handleCopy}
+                  className="p-2 rounded-xl text-surface-400 hover:bg-surface-800/60 hover:text-surface-200 transition-all"
+                  title="Copy verse"
+                >
+                  {copied ? (
+                    <Check className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+
+              {/* MORE MENU — visible on mobile always, on desktop as overflow */}
+              <div className="relative md:hidden" ref={menuRef}>
+                <button
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  className={cn(
+                    "p-2 rounded-xl transition-all",
+                    menuOpen
+                      ? "bg-surface-800 text-surface-100"
+                      : "text-surface-400 hover:bg-surface-800/60 hover:text-surface-200"
+                  )}
+                  title="More options"
+                  aria-expanded={menuOpen}
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+
+                <AnimatePresence>
+                  {menuOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-xl bg-surface-900 border border-white/[0.08] shadow-2xl overflow-hidden"
+                    >
+                      <button
+                        onClick={() => {
+                          handleRepeat();
+                          setMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-surface-200 hover:bg-surface-800 transition-colors"
+                      >
+                        <Repeat className={cn(
+                          "w-4 h-4",
+                          isThisPlaying && repeatMode === "verse" && "text-primary-400"
+                        )} />
+                        <span>
+                          {isThisPlaying && repeatMode === "verse"
+                            ? "Stop repeating"
+                            : "Repeat verse"}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setNoteOpen(true);
+                          setMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-surface-200 hover:bg-surface-800 transition-colors"
+                      >
+                        <StickyNote className="w-4 h-4" />
+                        <span>Add note</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleCopy();
+                          setMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-surface-200 hover:bg-surface-800 transition-colors"
+                      >
+                        {copied ? (
+                          <Check className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                        <span>{copied ? "Copied!" : "Copy verse"}</span>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Desktop overflow (kept as visual anchor) */}
+              <button
+                className="hidden md:flex p-2 rounded-xl text-surface-400 hover:bg-surface-800/60 hover:text-surface-200 transition-all opacity-0 group-hover:opacity-100"
+                title="More"
+              >
                 <MoreHorizontal className="w-4 h-4" />
               </button>
             </div>
