@@ -1,5 +1,4 @@
 "use client";
-import { audioEngine } from "@/lib/audioEngine";
 // src/stores/audioStore.ts
 
 import { create } from "zustand";
@@ -220,14 +219,7 @@ export const useAudioStore = create<AudioStore>()(
       stop: () => {
         // Save position BEFORE clearing state (so resume works next time)
         get().saveLastPosition();
-        // Actually halt the underlying audio element
-        try {
-          audioEngine.pause();
-          audioEngine.seek(0);
-        } catch (err) {
-          console.warn("[AudioStore] engine stop failed:", err);
-        }
-        // Fully clear player state so the AudioPlayer component unmounts
+        // Fully clear player state — AudioProvider watching isPlaying will halt audio
         // (component checks: if (!currentSurahId || !currentAyahNumber) return null)
         set({
           isPlaying: false,
