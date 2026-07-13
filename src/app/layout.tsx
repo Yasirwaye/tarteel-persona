@@ -1,4 +1,5 @@
 // src/app/layout.tsx
+import IOSInstallPrompt from "@/components/layout/IOSInstallPrompt";
 import type { Metadata , Viewport } from "next";
 import { Inter, Amiri } from "next/font/google";
 import "./globals.css";
@@ -69,7 +70,7 @@ export default function RootLayout({
             },
           }}
         />
-      </body>
+      <IOSInstallPrompt /></body>
     </html>
   );
 }
