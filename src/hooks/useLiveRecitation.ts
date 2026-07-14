@@ -1,5 +1,6 @@
 // src/hooks/useLiveRecitation.ts
 "use client";
+import { log, warn } from "@/lib/logger";
 
 import { apiUrl } from "@/lib/apiBase";
 
@@ -264,7 +265,7 @@ export function useLiveRecitation({
 
       // ── Streaming transcription — fires every 2 seconds during recording ──
       streamIntervalRef.current = setInterval(async () => {
-        console.log('[STREAM] interval tick, chunks:', chunksRef.current.length, 'session match:', sessionId === sessionIdRef.current, 'streaming:', isStreamingRef.current);
+        log('[STREAM] interval tick, chunks:', chunksRef.current.length, 'session match:', sessionId === sessionIdRef.current, 'streaming:', isStreamingRef.current);
         if (sessionId !== sessionIdRef.current) return;
         if (isStreamingRef.current) return; // skip if previous still running
         if (chunksRef.current.length === 0) return;
@@ -283,7 +284,7 @@ export function useLiveRecitation({
         const controller = new AbortController();
         streamControllerRef.current = controller;
         isStreamingRef.current = true;
-        console.log('[STREAM] firing fetch, blob size:', currentBlob.size);
+        log('[STREAM] firing fetch, blob size:', currentBlob.size);
 
         try {
           const formData = new FormData();
@@ -307,18 +308,18 @@ export function useLiveRecitation({
 
           const data = await res.json();
           const transcript = (data.text || "").trim();
-          console.log('[STREAM] got transcript:', transcript.slice(0, 100));
+          log('[STREAM] got transcript:', transcript.slice(0, 100));
 
           if (transcript && sessionId === sessionIdRef.current) {
             matchTranscript(transcript);
-            console.log('[STREAM] matched, transcript len:', transcript.length);
+            log('[STREAM] matched, transcript len:', transcript.length);
             setState((s) => ({ ...s, spokenSoFar: transcript }));
           }
         } catch (err) {
           // AbortError is expected when superseded — ignore
           if ((err as Error).name !== "AbortError") {
-            console.log('[STREAM] fetch error:', (err as Error).message);
-            console.warn("[LiveStream] transcribe failed:", err);
+            log('[STREAM] fetch error:', (err as Error).message);
+            warn("[LiveStream] transcribe failed:", err);
           }
         } finally {
           isStreamingRef.current = false;
@@ -448,8 +449,10 @@ export function useLiveRecitation({
   );
 
   useEffect(() => {
+    // Capture ref value at effect time so cleanup uses the correct one
+    const currentSessionRef = sessionIdRef;
     return () => {
-      sessionIdRef.current++;
+      currentSessionRef.current++;
       cleanup();
     };
   }, [cleanup]);

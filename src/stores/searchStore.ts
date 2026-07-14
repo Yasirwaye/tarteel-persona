@@ -1,5 +1,6 @@
 // src/stores/searchStore.ts
 "use client";
+import { log, warn } from "@/lib/logger";
 
 import { create } from "zustand";
 import type { SearchableVerse } from "@/lib/searchIndex";
@@ -33,7 +34,7 @@ function getWorker(): Worker | null {
     try {
       worker = new Worker("/workers/search-worker.js");
     } catch (e) {
-      console.warn("[Search] Worker unavailable:", e);
+      warn("[Search] Worker unavailable:", e);
       return null;
     }
   }
@@ -90,7 +91,7 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
           buildProgress: 100,
           isReady: true,
         });
-        console.log("[Search] Index built:", payload?.count ?? verses.length);
+        log("[Search] Index built:", payload?.count ?? verses.length);
       }
     };
 

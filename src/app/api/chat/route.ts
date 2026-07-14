@@ -1,3 +1,4 @@
+import { warn } from "@/lib/logger";
 // src/app/api/chat/route.ts
 import { withCors, corsPreflight } from "@/lib/cors";
 export const maxDuration = 60;
@@ -140,7 +141,7 @@ export async function POST(req: Request) {
                 }
               } catch (e) {
                 // Skip malformed JSON chunks
-                console.warn("Skipped SSE chunk:", data.slice(0, 100));
+                warn("Skipped SSE chunk:", data.slice(0, 100));
               }
             }
           }

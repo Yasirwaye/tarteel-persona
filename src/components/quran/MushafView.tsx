@@ -1,7 +1,7 @@
 // src/components/quran/MushafView.tsx
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect} from "react";
 import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Loader2, Moon, Sun, Maximize2, Minimize2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -43,7 +43,7 @@ export default function MushafView({
   activeAyah,
   onActivate,
   recitationWords,
-  isReciting,
+  isReciting: _isReciting,  // intentionally unused — kept in props for API compat
   hideArabic = false,
 }: MushafViewProps) {
   // Build a lookup: "surahId:ayahNumber:wordIdxInAyah" → LiveWord status
@@ -378,7 +378,7 @@ export default function MushafView({
                         {(() => {
                           // Count word position within each ayah on this line
                           // (skipping end-of-ayah markers since LiveWords don't include them)
-                          const ayahWordCounter = new Map<string, number>();
+                          const _ayahWordCounter = new Map<string, number>();
                           // We also need to carry the count across lines — use a per-render
                           // closure that tracks position from the start of the ayah on this page.
                           // For simplicity: count from start of CURRENT line for this ayah.

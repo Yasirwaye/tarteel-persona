@@ -1,5 +1,6 @@
 // src/lib/nativeNotifications.ts
 "use client";
+import { log, warn } from "@/lib/logger";
 
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { App } from "@capacitor/app";
@@ -65,7 +66,7 @@ export async function cancelAllPrayerNotifications(): Promise<void> {
       await LocalNotifications.cancel({ notifications: ours.map((n) => ({ id: n.id })) });
     }
   } catch (err) {
-    console.warn("[NativeNotif] cancel failed:", err);
+    warn("[NativeNotif] cancel failed:", err);
   }
 }
 
@@ -84,7 +85,7 @@ export async function scheduleAllPrayerNotifications(): Promise<void> {
   await cancelAllPrayerNotifications();
 
   if (!times || !notificationsEnabled) {
-    console.log("[NativeNotif] Notifications disabled or no times — skipping");
+    log("[NativeNotif] Notifications disabled or no times — skipping");
     return;
   }
 
@@ -136,7 +137,7 @@ export async function scheduleAllPrayerNotifications(): Promise<void> {
   }
 
   if (notifications.length === 0) {
-    console.log("[NativeNotif] Nothing to schedule");
+    log("[NativeNotif] Nothing to schedule");
     return;
   }
 
@@ -144,7 +145,7 @@ export async function scheduleAllPrayerNotifications(): Promise<void> {
     // Note: iOS shows scheduled local notifications in foreground by default (iOS 14+)
     // Android needs a notification channel (created in initNativeNotifications)
     await LocalNotifications.schedule({ notifications });
-    console.log(`[NativeNotif] Scheduled ${notifications.length} prayer notifications`);
+    log(`[NativeNotif] Scheduled ${notifications.length} prayer notifications`);
   } catch (err) {
     console.error("[NativeNotif] schedule failed:", err);
   }
@@ -182,7 +183,7 @@ export async function initNativeNotifications(
     });
   } catch (err) {
     // Channels may already exist — that's fine
-    console.log("[NativeNotif] Channel setup:", err);
+    log("[NativeNotif] Channel setup:", err);
   }
 
   // Listen for taps on notifications
@@ -190,7 +191,7 @@ export async function initNativeNotifications(
     "localNotificationActionPerformed",
     (event) => {
       const extra = event.notification.extra ?? {};
-      console.log("[NativeNotif] Notification tapped:", extra);
+      log("[NativeNotif] Notification tapped:", extra);
       onOpenedFromNotification(extra);
     }
   );

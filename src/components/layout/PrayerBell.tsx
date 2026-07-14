@@ -28,7 +28,7 @@ export default function PrayerBell() {
   const city = usePrayerStore((s) => s.city);
   const country = usePrayerStore((s) => s.country);
   const notificationsEnabled = usePrayerStore((s) => s.notificationsEnabled);
-  const adhanEnabled = usePrayerStore((s) => s.adhanEnabled);
+  const _adhanEnabled = usePrayerStore((s) => s.adhanEnabled);
   const adhanMode = usePrayerStore((s) => s.adhanMode);
   const setAdhanMode = usePrayerStore((s) => s.setAdhanMode);
   const enabledPrayers = usePrayerStore((s) => s.enabledPrayers);

@@ -1,3 +1,4 @@
+import { warn } from "@/lib/logger";
 // src/lib/madaniFonts.ts
 // Load Madani mushaf page fonts from local bundle
 
@@ -34,7 +35,7 @@ export function loadPageFont(pageNumber: number): Promise<void> {
           resolve();
         })
         .catch((err) => {
-          console.warn(`[MadaniFont] Failed to load p${pageNumber}:`, err);
+          warn(`[MadaniFont] Failed to load p${pageNumber}:`, err);
           loadingPromises.delete(pageNumber);
           resolve();
         });

@@ -13,7 +13,7 @@ export default function SurahNotFound() {
         Surah Not Found
       </h2>
       <p className="text-surface-400 text-sm mb-6 max-w-sm">
-        The surah you're looking for doesn't exist. The Quran has 114 surahs
+        The surah you&apos;re looking for doesn&apos;t exist. The Quran has 114 surahs
         (numbered 1–114).
       </p>
       <Link

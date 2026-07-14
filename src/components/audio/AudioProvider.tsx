@@ -6,49 +6,33 @@ import { audioEngine } from "@/lib/audioEngine";
 import { useAudioStore } from "@/stores/audioStore";
 
 /**
- * Initializes the audio engine on mount + syncs store state → engine.
- * Place once in the app root layout.
+ * Initializes the audio engine on mount.
+ * The engine's internal subscribeToStore() handles all play/pause/reciter changes.
+ * We only need to handle the FULL STOP (X button) case which requires clearing src.
  */
 export default function AudioProvider() {
-  // ── One-time init ─────────────────────────────────────────────────
+  // ── Init engine once ──────────────────────────────────────────────
   useEffect(() => {
     audioEngine.init();
   }, []);
 
-  // ── React to STOP: when currentSurahId becomes null, halt audio ──
+  // ── React to full STOP: engine.subscribeToStore handles pause,
+  //     but we need to also clear the <audio> src to release the file ──
   useEffect(() => {
     const unsub = useAudioStore.subscribe((state, prev) => {
-      // User clicked X (stop) — currentSurahId went from something → null
+      // Detect the "X button" case: currentSurahId went from something → null
       if (prev.currentSurahId !== null && state.currentSurahId === null) {
-        try {
-          // Try every possible stop method the engine might expose
-          const engine = audioEngine as unknown as {
-            stop?: () => void;
-            pause?: () => void;
-            halt?: () => void;
-            reset?: () => void;
-            audio?: HTMLAudioElement;
-            _audio?: HTMLAudioElement;
-            element?: HTMLAudioElement;
-          };
-
-          if (typeof engine.stop === "function") {
-            engine.stop();
-          } else if (typeof engine.pause === "function") {
-            engine.pause();
-          } else if (typeof engine.halt === "function") {
-            engine.halt();
-          }
-
-          // Direct audio element access as ultimate fallback
-          const el = engine.audio || engine._audio || engine.element;
-          if (el instanceof HTMLAudioElement) {
-            el.pause();
-            el.currentTime = 0;
-            el.src = "";
-          }
-        } catch (err) {
-          console.warn("[AudioProvider] halt failed:", err);
+        // Access the internal audio element via type assertion
+        const engine = audioEngine as unknown as {
+          audio?: HTMLAudioElement | null;
+          currentUrl?: string;
+        };
+        if (engine.audio) {
+          engine.audio.pause();
+          engine.audio.currentTime = 0;
+          engine.audio.removeAttribute("src");
+          engine.audio.load(); // fully reset
+          engine.currentUrl = "";
         }
       }
     });

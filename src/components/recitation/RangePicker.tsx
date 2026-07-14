@@ -107,7 +107,7 @@ export default function RangePicker({
 
       <div className="px-3 py-2 rounded-xl bg-surface-800/40 border border-white/[0.04]">
         <p className="text-xs text-surface-400">
-          You'll recite{" "}
+          You&apos;ll recite{" "}
           <span className="font-bold text-surface-200">
             {toAyah - fromAyah + 1} verse{toAyah - fromAyah + 1 !== 1 ? "s" : ""}
           </span>{" "}

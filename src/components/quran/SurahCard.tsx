@@ -2,7 +2,6 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { BookOpen, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasKeyMessages } from "@/data/key-messages";

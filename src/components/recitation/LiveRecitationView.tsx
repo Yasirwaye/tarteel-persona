@@ -1,5 +1,6 @@
 // src/components/recitation/LiveRecitationView.tsx
 "use client";
+import { log} from "@/lib/logger";
 
 import { motion } from "framer-motion";
 import { RotateCw } from "lucide-react";
@@ -186,7 +187,7 @@ export default function LiveRecitationView({
   if (mode === "mushaf") {
     // Compute current ayah from cursor position in the global word array
     let currentRecitingAyah: number | null = null;
-    console.log('[MUSHAF] render state — isRecording:', isRecording, 'currentWordIndex:', currentWordIndex, 'words total:', words.length, 'first word ayah:', words[0]?.ayahNumber, 'current word:', words[currentWordIndex]);
+    log('[MUSHAF] render state — isRecording:', isRecording, 'currentWordIndex:', currentWordIndex, 'words total:', words.length, 'first word ayah:', words[0]?.ayahNumber, 'current word:', words[currentWordIndex]);
     if (isRecording && currentWordIndex >= 0 && currentWordIndex < words.length) {
       const currentWord = words[currentWordIndex];
       if (currentWord) {

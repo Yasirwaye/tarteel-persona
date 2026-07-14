@@ -134,7 +134,7 @@ const DAMMA = "\u064F";
 const FATHATAN = "\u064B";
 const KASRATAN = "\u064D";
 const DAMMATAN = "\u064C";
-const SMALL_HIGH_MEEM = "\u06E2"; // iqlab marker in some scripts
+const _SMALL_HIGH_MEEM = "\u06E2"; // iqlab marker in some scripts
 
 // Qalqalah letters
 const QALQALAH_LETTERS = ["\u0642", "\u0637", "\u0628", "\u062C", "\u062F"]; // ق ط ب ج د

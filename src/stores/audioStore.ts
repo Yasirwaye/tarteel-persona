@@ -8,7 +8,7 @@ import { persist } from "zustand/middleware";
 // ── Audio URL cache (prevents re-fetching same ayah) ─────────────────────────
 const audioCache = new Map<string, string>();
 
-function getCachedAudioUrl(surahId: number, ayahNumber: number, reciter: string): string {
+function _getCachedAudioUrl(surahId: number, ayahNumber: number, reciter: string): string {
   const key = `${reciter}-${surahId}-${ayahNumber}`;
   if (audioCache.has(key)) return audioCache.get(key)!;
   // Format: https://everyayah.com/data/{reciter}/{surah_padded}{ayah_padded}.mp3

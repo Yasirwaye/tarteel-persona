@@ -9,7 +9,7 @@
  */
 
 const ALQURAN_API = "https://api.alquran.cloud/v1";
-const QURAN_COM_API = "https://api.quran.com/api/v4";
+const _QURAN_COM_API = "https://api.quran.com/api/v4";
 
 export interface ApiAyah {
   number: number;          // Global ayah number (1-6236)

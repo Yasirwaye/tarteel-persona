@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import { Sparkles, ChevronRight, Lightbulb, BookOpen } from "lucide-react";
 import { getKeyMessages, hasKeyMessages } from "@/data/key-messages";
 import { MESSAGE_CATEGORIES } from "@/lib/constants";
-import { cn } from "@/lib/utils";
 
 interface KeyMessagesPreviewProps {
   surahId: number;

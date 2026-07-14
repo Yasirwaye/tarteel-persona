@@ -1,5 +1,6 @@
 // src/lib/searchIndex.ts
 "use client";
+import { log, warn } from "@/lib/logger";
 
 import { fetchSurah, type FullAyah, type TranslationId } from "@/lib/quran-api";
 import { surahsMetadata } from "@/data/quran/metadata/surahs";
@@ -65,10 +66,10 @@ export async function buildQuranIndex(
       const all: SearchableVerse[] = data.map((v) => ({ ...v, type: "verse" as const }));
       if (onProgress) onProgress(100, 100);
       cachedIndex = all;
-      console.log("[SearchIndex] Loaded pre-built index:", all.length, "verses");
+      log("[SearchIndex] Loaded pre-built index:", all.length, "verses");
       return all;
     } catch (err) {
-      console.warn("[SearchIndex] Pre-built index unavailable, falling back to API:", err);
+      warn("[SearchIndex] Pre-built index unavailable, falling back to API:", err);
       const allVerses: SearchableVerse[] = [];
       const total = surahsMetadata.length;
       const BATCH_SIZE = 10;

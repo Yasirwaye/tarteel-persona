@@ -400,7 +400,7 @@ export default function RecitationSession({ surah }: Props) {
         >
           <ResultsCard accuracy={accuracy} />
           <p className="text-xs text-surface-500 text-center mt-4">
-            💡 Hover over any verse and click "Retry" to practice just that
+            💡 Hover over any verse and click &quot;Retry&quot; to practice just that
             verse
           </p>
         </motion.div>

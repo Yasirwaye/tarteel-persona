@@ -62,7 +62,7 @@ export default function MemorizationPage() {
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles className="w-4 h-4 text-primary-400" />
                   <span className="text-xs font-semibold text-primary-400 uppercase tracking-wider">
-                    Today's Session
+                    Today&apos;s Session
                   </span>
                 </div>
                 <h2 className="text-xl font-bold text-surface-50 mb-1">

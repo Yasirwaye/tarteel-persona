@@ -1,5 +1,6 @@
 // src/hooks/usePrayerNotifications.ts
 "use client";
+import { warn } from "@/lib/logger";
 
 import { useEffect, useRef } from "react";
 import {
@@ -41,7 +42,7 @@ export function usePrayerNotifications() {
           if (extra.openFullAdhan && typeof window !== "undefined") {
             const audio = new Audio(ADHAN_AUDIO_PATH);
             audio.play().catch((e) =>
-              console.warn("[Adhan] full playback failed:", e)
+              warn("[Adhan] full playback failed:", e)
             );
           }
         });
@@ -114,7 +115,7 @@ export function usePrayerNotifications() {
               setTimeout(() => notif.close(), 30000);
             }
           } catch (err) {
-            console.warn("[Prayer] Native notification failed:", err);
+            warn("[Prayer] Native notification failed:", err);
           }
 
           // ALWAYS show in-app toast (works even without native notification permission)
@@ -126,7 +127,7 @@ export function usePrayerNotifications() {
           if (adhanMode !== "silent" && audioRef.current) {
             audioRef.current.currentTime = 0;
             audioRef.current.play().catch((err) => {
-              console.warn("[Adhan] Playback failed:", err);
+              warn("[Adhan] Playback failed:", err);
             });
           }
         }, msUntil);
@@ -259,7 +260,7 @@ export function isBrowserNotificationSupported(): boolean {
 export function testAdhan() {
   if (isNative()) {
     testNativeAdhan().catch((e) => {
-      console.warn("[Adhan] native test failed:", e);
+      warn("[Adhan] native test failed:", e);
       toast.error("Could not schedule test adhan");
     });
     toast.success("Test adhan scheduled — fires in ~1 second");
@@ -268,7 +269,7 @@ export function testAdhan() {
 
   const audio = new Audio(ADHAN_AUDIO_PATH);
   audio.play().catch((err) => {
-    console.warn("[Adhan] Test playback failed:", err);
+    warn("[Adhan] Test playback failed:", err);
     toast.error("Could not play adhan");
   });
 }
@@ -282,7 +283,7 @@ export function testAdhan() {
  * Use this to validate end-to-end delivery on real devices.
  */
 export function scheduleFullTestNotification(delaySeconds: number = 30) {
-  const state = usePrayerStoreForTest();
+  const state = getPrayerStoreSnapshot();
   const adhanMode = state?.adhanMode ?? "short";
   const testName = "Test";
 
@@ -311,7 +312,7 @@ export function scheduleFullTestNotification(delaySeconds: number = 30) {
         nativeShown = true;
       }
     } catch (err) {
-      console.warn("[TestNotif] Native failed:", err);
+      warn("[TestNotif] Native failed:", err);
     }
 
     // 2. Always show in-app toast
@@ -327,20 +328,21 @@ export function scheduleFullTestNotification(delaySeconds: number = 30) {
       try {
         const audio = new Audio(ADHAN_AUDIO_PATH);
         audio.play().catch((err) => {
-          console.warn("[TestNotif] Audio failed:", err);
+          warn("[TestNotif] Audio failed:", err);
           toast.warning("Adhan audio blocked", {
             description: "Browser blocked auto-play. Tap the app before scheduling next time.",
           });
         });
       } catch (err) {
-        console.warn("[TestNotif] Audio error:", err);
+        warn("[TestNotif] Audio error:", err);
       }
     }
   }, delaySeconds * 1000);
 }
 
 // Helper to safely read prayer store (avoids circular imports)
-function usePrayerStoreForTest() {
+// NOT a hook — renamed to avoid react-hooks/rules-of-hooks lint error
+function getPrayerStoreSnapshot() {
   try {
     return usePrayerStore.getState();
   } catch {
