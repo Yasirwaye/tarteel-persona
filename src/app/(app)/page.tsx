@@ -24,7 +24,7 @@ import { useNotesStore } from "@/stores/notesStore";
 import { useMemorizationStore } from "@/stores/memorizationStore";
 import { useReflectionsStore } from "@/stores/reflectionsStore";
 import { useActivityStore } from "@/stores/activityStore";
-import { usePrayerNotifications } from "@/hooks/usePrayerNotifications";
+import { useHydrated } from "@/hooks/useHydrated";
 
 const container = {
   hidden: { opacity: 0 },
@@ -58,26 +58,37 @@ function getIslamicDate(): string {
   }
 }
 
+const NO_PAGES = {};
+const NO_ITEMS: never[] = [];
+
 export default function HomePage() {
-  // Initialize prayer notification scheduler
-  usePrayerNotifications();
+  // Saved data and the clock exist only in the browser: until hydration ends,
+  // render as the server did (empty) so the HTML matches, then fill in
+  const hydrated = useHydrated();
 
   // ── Real data from stores ─────────────────────────────────────────
-  const lastRead = useReaderStore((s) => s.lastRead);
-  const recentSurahIds = useReaderStore((s) => s.recentSurahs);
+  const storedLastRead = useReaderStore((s) => s.lastRead);
+  const storedRecentSurahIds = useReaderStore((s) => s.recentSurahs);
+  const lastRead = hydrated ? storedLastRead : null;
+  const recentSurahIds = hydrated ? storedRecentSurahIds : NO_ITEMS;
 
-  const bookmarks = useBookmarkStore((s) => s.bookmarks);
-  const notes = useNotesStore((s) => s.notes);
+  const storedBookmarks = useBookmarkStore((s) => s.bookmarks);
+  const storedNotes = useNotesStore((s) => s.notes);
+  const bookmarks = hydrated ? storedBookmarks : NO_ITEMS;
+  const notes = hydrated ? storedNotes : NO_ITEMS;
 
-  const memorizationPages = useMemorizationStore((s) => s.pages);
-  const reflections = useReflectionsStore((s) => s.reflections);
+  const storedMemorizationPages = useMemorizationStore((s) => s.pages);
+  const storedReflections = useReflectionsStore((s) => s.reflections);
+  const memorizationPages = hydrated ? storedMemorizationPages : (NO_PAGES as typeof storedMemorizationPages);
+  const reflections = hydrated ? storedReflections : (NO_PAGES as typeof storedReflections);
 
   // Subscribe to raw activities array (stable reference unless data changes)
   const activities = useActivityStore((s) => s.activities);
   // Calculate heatmap derived data with memo — recomputed only when activities change
   const heatmap = useMemo(
-    () => useActivityStore.getState().getHeatmap(7),
-    [activities]
+    () => (hydrated ? useActivityStore.getState().getHeatmap(7) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activities, hydrated]
   );
 
   // ── Derived stats ─────────────────────────────────────────────────
@@ -118,20 +129,22 @@ export default function HomePage() {
     >
       {/* ── Hero greeting ──────────────────────────────────────────── */}
       <motion.div variants={item} className="space-y-2">
-        <p className="text-sm text-surface-500 font-medium">{getGreeting()}</p>
+        <p className="text-sm text-surface-500 font-medium">{hydrated ? getGreeting() : "\u00a0"}</p>
         <h2 className="text-3xl md:text-4xl font-bold text-surface-50 tracking-tight">
           Continue your <span className="text-gradient">journey</span>
         </h2>
         <p className="text-surface-400 text-sm max-w-md">
-          {new Date().toLocaleDateString("en-US", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-          })}
+          {hydrated
+            ? new Date().toLocaleDateString("en-US", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })
+            : "\u00a0"}
         </p>
         <p className="text-gold-400/80 text-xs mt-1 font-medium">
-          {getIslamicDate()}
+          {hydrated ? getIslamicDate() : "\u00a0"}
         </p>
       </motion.div>
 

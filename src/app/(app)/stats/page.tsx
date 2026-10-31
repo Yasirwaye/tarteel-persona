@@ -23,10 +23,12 @@ import { useMemorizationStore } from "@/stores/memorizationStore";
 import { useReflectionsStore } from "@/stores/reflectionsStore";
 import { useBookmarkStore } from "@/stores/bookmarkStore";
 import { useNotesStore } from "@/stores/notesStore";
+import { useHydrated } from "@/hooks/useHydrated";
 
 const HEATMAP_DAYS = 91; // ~13 weeks
 
 export default function StatsPage() {
+  const hydrated = useHydrated();
   const activitiesRaw = useActivityStore((s) => s.activities);
   const recitationAttempts = useRecitationStore((s) => s.attempts);
   const recitationStats = useMemo(
@@ -82,6 +84,9 @@ export default function StatsPage() {
 
     return result;
   }, [heatmap]);
+
+  // Saved data exists only in the browser: render the empty shell until hydration ends
+  if (!hydrated) return <div className="min-h-screen" />;
 
   return (
     <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 pb-32">

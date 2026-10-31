@@ -8,8 +8,10 @@ import { Mic, TrendingUp, Award, Target, ChevronRight, Search } from "lucide-rea
 import { cn } from "@/lib/utils";
 import { surahsMetadata } from "@/data/quran/metadata/surahs";
 import { useRecitationStore } from "@/stores/recitationStore";
+import { useHydrated } from "@/hooks/useHydrated";
 
 export default function RecitationPage() {
+  const hydrated = useHydrated();
   const [search, setSearch] = useState("");
   const { attempts, getStats } = useRecitationStore();
   const stats = getStats();
@@ -32,6 +34,9 @@ export default function RecitationPage() {
     });
     return ids.slice(0, 6);
   }, [attempts]);
+
+  // Saved attempts exist only in the browser: render the empty shell until hydration ends
+  if (!hydrated) return <div className="min-h-screen" />;
 
   return (
     <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 pb-32">
