@@ -4,6 +4,7 @@ import { log, warn } from "@/lib/logger";
 
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { App } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import { isNative } from "@/lib/platform";
 import {
   usePrayerStore,
@@ -28,6 +29,76 @@ const DAYS_TO_SCHEDULE = 7;
 
 function notifIdFor(prayerIndex: number, dayOffset: number): number {
   return dayOffset * 10 + prayerIndex;
+}
+
+// Android notification channels can never change their sound once created, so
+// these ids are versioned (v1 channels may exist without the adhan attached)
+const CHANNEL_ADHAN = "prayer-adhan-v2";
+const CHANNEL_SILENT = "prayer-silent-v2";
+const OLD_CHANNELS = ["prayer-adhan", "prayer-silent"];
+// White crescent, android/app/src/main/res/drawable/ic_stat_prayer.xml
+const SMALL_ICON = "ic_stat_prayer";
+
+/**
+ * The adhan as a notification sound. Android: res/raw/adhan.mp3 (by resource
+ * name). iOS: adhan.caf in the app bundle — iOS plays at most 30 s of a
+ * notification sound (longer files fall back to the default chime).
+ */
+function adhanSound(): string {
+  return Capacitor.getPlatform() === "ios" ? "adhan.caf" : "adhan";
+}
+
+type DayTimes = { date: Date; times: Record<PrayerName, string> };
+
+function localDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Prayer times for each of the next `days` days (each day's own times, from
+ * the monthly aladhan calendar). Falls back to today's times for every day
+ * when offline — they drift only a minute or two over a week.
+ */
+async function upcomingPrayerTimes(days: number, fallback: PrayerTimes): Promise<DayTimes[]> {
+  const { city, country } = usePrayerStore.getState();
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const wanted = Array.from({ length: days }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+
+  const byDate = new Map<string, Record<PrayerName, string>>();
+  const months = [...new Set(wanted.map((d) => `${d.getFullYear()}/${d.getMonth() + 1}`))];
+  try {
+    for (const ym of months) {
+      const url = `https://api.aladhan.com/v1/calendarByCity/${ym}?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&method=2`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      for (const day of data.data ?? []) {
+        // gregorian.date is "DD-MM-YYYY"; timings look like "05:13 (EAT)"
+        const [dd, mm, yyyy] = String(day.date.gregorian.date).split("-");
+        const times = {} as Record<PrayerName, string>;
+        for (const name of PRAYER_NAMES) times[name] = String(day.timings[name]).slice(0, 5);
+        byDate.set(`${yyyy}-${mm}-${dd}`, times);
+      }
+    }
+  } catch (err) {
+    warn("[NativeNotif] calendar fetch failed, reusing today's times:", err);
+  }
+
+  return wanted.map((date) => ({
+    date,
+    times: byDate.get(localDate(date)) ?? {
+      Fajr: fallback.Fajr,
+      Dhuhr: fallback.Dhuhr,
+      Asr: fallback.Asr,
+      Maghrib: fallback.Maghrib,
+      Isha: fallback.Isha,
+    },
+  }));
 }
 
 /**
@@ -71,9 +142,8 @@ export async function cancelAllPrayerNotifications(): Promise<void> {
 }
 
 /**
- * Schedule notifications for the next N days based on current store state.
- * Re-uses today's prayer times for every day (good enough — they shift ≤1min/day).
- * Call this whenever times or settings change.
+ * Schedule notifications for the next N days based on current store state,
+ * each day with its own prayer times. Call this whenever times or settings change.
  */
 export async function scheduleAllPrayerNotifications(): Promise<void> {
   if (!isNative()) return;
@@ -90,24 +160,24 @@ export async function scheduleAllPrayerNotifications(): Promise<void> {
   }
 
   const now = new Date();
+  const days = await upcomingPrayerTimes(DAYS_TO_SCHEDULE, times);
   const notifications: Array<{
     id: number;
     title: string;
     body: string;
-    schedule: { at: Date };
+    schedule: { at: Date; allowWhileIdle: boolean };
     sound?: string;
     smallIcon?: string;
     channelId?: string;
     extra?: Record<string, unknown>;
   }> = [];
 
-  for (let dayOffset = 0; dayOffset < DAYS_TO_SCHEDULE; dayOffset++) {
+  days.forEach(({ date, times: dayTimes }, dayOffset) => {
     PRAYER_NAMES.forEach((name: PrayerName, prayerIndex: number) => {
       if (!enabledPrayers[name]) return;
 
-      const [h, m] = times[name].split(":").map(Number);
-      const at = new Date(now);
-      at.setDate(at.getDate() + dayOffset);
+      const [h, m] = dayTimes[name].split(":").map(Number);
+      const at = new Date(date);
       at.setHours(h, m, 0, 0);
 
       // Skip past times (today's prayers that already passed)
@@ -115,18 +185,19 @@ export async function scheduleAllPrayerNotifications(): Promise<void> {
 
       const id = notifIdFor(prayerIndex, dayOffset);
 
-      // sound only included when not silent; "adhan" maps to res/raw/adhan.mp3 (Android)
-      // For "full" mode we also include the sound; we'll auto-play full when user opens app
+      // The adhan plays as the notification sound unless silent; in "full" mode
+      // tapping the notification also plays the whole adhan in the app
       const useSound = adhanMode !== "silent";
 
       notifications.push({
         id,
         title: `${name} Prayer Time`,
         body: `It's time for ${name} prayer`,
-        schedule: { at },
-        ...(useSound ? { sound: "adhan" } : {}),
-        smallIcon: "ic_stat_icon_config_sample",
-        channelId: useSound ? "prayer-adhan" : "prayer-silent",
+        // allowWhileIdle: fire on time even when the phone is asleep (Doze)
+        schedule: { at, allowWhileIdle: true },
+        ...(useSound ? { sound: adhanSound() } : {}),
+        smallIcon: SMALL_ICON,
+        channelId: useSound ? CHANNEL_ADHAN : CHANNEL_SILENT,
         extra: {
           prayerName: name,
           adhanMode,
@@ -134,7 +205,7 @@ export async function scheduleAllPrayerNotifications(): Promise<void> {
         },
       });
     });
-  }
+  });
 
   if (notifications.length === 0) {
     log("[NativeNotif] Nothing to schedule");
@@ -163,8 +234,9 @@ export async function initNativeNotifications(
 
   // Create Android notification channels (idempotent — safe to call multiple times)
   try {
+    for (const id of OLD_CHANNELS) await LocalNotifications.deleteChannel({ id }).catch(() => {});
     await LocalNotifications.createChannel({
-      id: "prayer-adhan",
+      id: CHANNEL_ADHAN,
       name: "Prayer Times (with adhan)",
       description: "Plays adhan when prayer time arrives",
       importance: 5, // IMPORTANCE_HIGH
@@ -174,7 +246,7 @@ export async function initNativeNotifications(
       lights: true,
     });
     await LocalNotifications.createChannel({
-      id: "prayer-silent",
+      id: CHANNEL_SILENT,
       name: "Prayer Times (silent)",
       description: "Silent prayer time notification",
       importance: 4,
@@ -218,13 +290,48 @@ export async function testNativeAdhan(): Promise<void> {
         id: 99,
         title: "Test Adhan",
         body: "This is how prayer notifications will appear",
-        schedule: { at: new Date(Date.now() + 1000) },
-        sound: "adhan",
-        smallIcon: "ic_stat_icon_config_sample",
-        channelId: "prayer-adhan",
+        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
+        sound: adhanSound(),
+        smallIcon: SMALL_ICON,
+        channelId: CHANNEL_ADHAN,
       },
     ],
   });
+}
+
+// Id of the one pending "test timer" notification (outside the prayer id range)
+const TEST_TIMER_NOTIF_ID = 98;
+
+/**
+ * Test timer: a real scheduled prayer notification (same channel, adhan sound,
+ * wake-from-sleep) at `at`, so it can be tested with the app closed and the
+ * phone locked. Replaces any earlier test timer.
+ */
+export async function scheduleNativeAdhanTest(at: Date): Promise<boolean> {
+  if (!isNative()) return false;
+  const granted = (await checkNativePermission()) || (await requestNativePermission());
+  if (!granted) return false;
+  await cancelNativeAdhanTest();
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id: TEST_TIMER_NOTIF_ID,
+        title: "Adhan test",
+        body: "Test timer — this is how prayer-time notifications arrive",
+        schedule: { at, allowWhileIdle: true },
+        sound: adhanSound(),
+        smallIcon: SMALL_ICON,
+        channelId: CHANNEL_ADHAN,
+        extra: { prayerName: "Test", openFullAdhan: true },
+      },
+    ],
+  });
+  return true;
+}
+
+export async function cancelNativeAdhanTest(): Promise<void> {
+  if (!isNative()) return;
+  await LocalNotifications.cancel({ notifications: [{ id: TEST_TIMER_NOTIF_ID }] }).catch(() => {});
 }
 
 /**

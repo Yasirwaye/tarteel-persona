@@ -18,9 +18,10 @@ const config: CapacitorConfig = {
 
   plugins: {
     LocalNotifications: {
-      smallIcon: 'ic_stat_icon_config_sample',
+      // White crescent (android/app/src/main/res/drawable/ic_stat_prayer.xml);
+      // the adhan sound is set per notification channel in nativeNotifications.ts
+      smallIcon: 'ic_stat_prayer',
       iconColor: '#10b981',
-      sound: 'adhan.wav',
     },
     SplashScreen: {
       launchShowDuration: 1500,

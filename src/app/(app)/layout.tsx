@@ -6,6 +6,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import Navbar from "@/components/layout/Navbar";
 import AudioPlayer from "@/components/audio/AudioPlayer";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
+import { usePrayerNotifications } from "@/hooks/usePrayerNotifications";
 
 export default function AppLayout({
   children,
@@ -19,6 +20,8 @@ export default function AppLayout({
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useGlobalShortcuts();
+  // Prayer-time notifications + adhan: scheduled from every page, not just Home
+  usePrayerNotifications();
 
   // Detects screen size to toggle the right state
   const handleMenuToggle = () => {

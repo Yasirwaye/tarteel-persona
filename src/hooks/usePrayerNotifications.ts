@@ -16,6 +16,8 @@ import {
   requestNativePermission,
   checkNativePermission,
   testNativeAdhan,
+  scheduleNativeAdhanTest,
+  cancelNativeAdhanTest,
 } from "@/lib/nativeNotifications";
 
 const ADHAN_AUDIO_PATH = "/audio/adhan-short.mp3";
@@ -338,6 +340,55 @@ export function scheduleFullTestNotification(delaySeconds: number = 30) {
       }
     }
   }, delaySeconds * 1000);
+}
+
+let webTestTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Test timer: fire a prayer notification with the adhan at `at`.
+ * - Native app: a real scheduled notification — works with the app closed and
+ *   the phone locked, exactly like a prayer time.
+ * - Browser: a timer in this page (the page must stay open).
+ * Returns false when it could not be scheduled.
+ */
+export async function scheduleAdhanTest(at: Date): Promise<boolean> {
+  await cancelAdhanTest();
+  if (isNative()) {
+    const ok = await scheduleNativeAdhanTest(at);
+    if (!ok) toast.error("Notifications are not allowed — enable them in the phone's settings");
+    return ok;
+  }
+
+  await requestNotificationPermission();
+  webTestTimer = setTimeout(() => {
+    webTestTimer = null;
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        const notif = new Notification("Adhan test", {
+          body: "Test timer — this is how prayer-time notifications arrive",
+          icon: "/icons/icon-192.png",
+          tag: "prayer-test-timer",
+        });
+        setTimeout(() => notif.close(), 30000);
+      }
+    } catch (err) {
+      warn("[TestTimer] Notification failed:", err);
+    }
+    toast.success("Adhan test", { description: "The test timer fired", duration: 10000 });
+    new Audio(ADHAN_AUDIO_PATH).play().catch((err) => {
+      warn("[TestTimer] Audio failed:", err);
+      toast.warning("The browser blocked the adhan audio", {
+        description: "Tap anywhere on the page before the timer fires.",
+      });
+    });
+  }, Math.max(0, at.getTime() - Date.now()));
+  return true;
+}
+
+export async function cancelAdhanTest(): Promise<void> {
+  if (webTestTimer) clearTimeout(webTestTimer);
+  webTestTimer = null;
+  await cancelNativeAdhanTest();
 }
 
 // Helper to safely read prayer store (avoids circular imports)

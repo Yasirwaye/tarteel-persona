@@ -38,4 +38,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Prayer-time notifications must fire on the minute, even in Doze:
+         SCHEDULE_EXACT_ALARM on Android 12, USE_EXACT_ALARM from Android 13 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 </manifest>
