@@ -26,7 +26,7 @@ import { useSurah } from "@/hooks/useQuran";
 import { useLiveRecitation } from "@/hooks/useLiveRecitation";
 import { useRecitationStore } from "@/stores/recitationStore";
 import { useAudioStore } from "@/stores/audioStore";
-import { tokenizeArabic } from "@/lib/arabicUtils";
+import { scoreRecitation, splitQuranWords } from "@/lib/arabicUtils";
 import LiveRecitationView from "./LiveRecitationView";
 import RecitationLegend from "./RecitationLegend";
 
@@ -54,6 +54,7 @@ export default function RecitationSession({ surah }: Props) {
   } | null>(null);
 
   const recordedAttemptRef = useRef<boolean>(false);
+  const stoppedRef = useRef<boolean>(false);
 
   const { ayahs, isLoading: ayahsLoading } = useSurah(surah.id);
   const { addAttempt } = useRecitationStore();
@@ -70,15 +71,11 @@ export default function RecitationSession({ surah }: Props) {
       : ayahs;
 
     const text = targetAyahs.map((v) => v.textUthmani).join(" ");
-    const words = tokenizeArabic(text);
-
+    const words: string[] = [];
     const map: { surahId: number; ayahNumber: number }[] = [];
     for (const ayah of targetAyahs) {
-      const wordCount = ayah.textUthmani
-        .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g, "")
-        .split(/\s+/)
-        .filter(Boolean).length;
-      for (let i = 0; i < wordCount; i++) {
+      for (const w of splitQuranWords(ayah.textUthmani)) {
+        words.push(w.normalized);
         map.push({ surahId: surah.id, ayahNumber: ayah.ayahNumber });
       }
     }
@@ -104,7 +101,14 @@ export default function RecitationSession({ surah }: Props) {
     startRecording,
     stopRecording,
     reset,
-  } = useLiveRecitation({ expectedText, wordAyahMap, expectedWords });
+    getRecordingWav,
+  } = useLiveRecitation({
+    expectedText,
+    wordAyahMap,
+    expectedWords,
+    // Full-surah practice follows the reciter from any verse; a retry starts at its verse
+    allowStartAnywhere: !retryRange,
+  });
 
   useEffect(() => {
     if (error) toast.error(error);
@@ -135,28 +139,21 @@ export default function RecitationSession({ surah }: Props) {
         const lastAyah =
           attemptedWords[attemptedWords.length - 1]?.ayahNumber ?? 1;
 
-        // currentWordIndex is already set by useLiveRecitation to lastRealMatchIdx + 1
-        // It only counts words the user actually reached — never pads with pending/missed
-        const attemptedCount = currentWordIndex; // 0 if user recited nothing
+        // currentWordIndex = one past the last word the reciter reached.
+        // Skipped words inside that range count as mistakes; unreached words don't.
+        const attemptedCount = currentWordIndex;
         const countedWords = words.slice(0, attemptedCount);
-
-        const correctCount = countedWords.filter((w) => w.status === "correct").length;
-        const incorrectCount = countedWords.filter(
-          (w) => w.status === "incorrect"
-        ).length;
-        const missedCount = countedWords.filter((w) => w.status === "missed").length;
-        // spokenCount = words user actually attempted (correct + incorrect)
-        // Never include "missed" (words never reached) in the denominator
-        const spokenCount = correctCount + incorrectCount;
+        const score = scoreRecitation(countedWords.map((w) => w.status));
+        const correctCount = score.correct;
+        const incorrectCount = score.incorrect;
+        const missedCount = score.missed;
 
         addAttempt({
           surahId: surah.id,
           surahName: surah.name,
           fromAyah: firstAyah,
           toAyah: lastAyah,
-          accuracy: spokenCount > 0
-            ? Math.round((correctCount / spokenCount) * 100)
-            : 0,
+          accuracy: score.accuracy,
           correctCount,
           incorrectCount,
           missedCount,
@@ -175,13 +172,30 @@ export default function RecitationSession({ surah }: Props) {
 
   const handleStartReciting = async () => {
     recordedAttemptRef.current = false;
+    stoppedRef.current = false;
     setStage("live");
     await startRecording();
   };
 
   const handleStopReciting = async () => {
+    stoppedRef.current = true;
     await stopRecording();
   };
+
+  // Stopped but nothing was recognized → back to ready instead of a stuck "live" bar
+  useEffect(() => {
+    if (
+      stage === "live" &&
+      stoppedRef.current &&
+      !isRecording &&
+      !isProcessing &&
+      currentWordIndex === 0
+    ) {
+      stoppedRef.current = false;
+      setStage("ready");
+      toast.info("No recitation recognized — try again closer to the mic");
+    }
+  }, [stage, isRecording, isProcessing, currentWordIndex]);
 
   const handleRetryAll = () => {
     reset();
@@ -529,6 +543,24 @@ export default function RecitationSession({ surah }: Props) {
                 >
                   Done
                 </Link>
+                {process.env.NODE_ENV === "development" && (
+                  <button
+                    onClick={() => {
+                      const wav = getRecordingWav();
+                      if (!wav) return toast.error("No recording to download");
+                      const url = URL.createObjectURL(wav);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `recitation-${surah.id}-${new Date().toISOString().slice(0, 19).replace(/:/g, "")}.wav`;
+                      a.click();
+                      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+                    }}
+                    className="px-3 py-3 rounded-xl text-surface-500 hover:text-surface-200 text-[11px] transition-all"
+                    title="Development only: save the audio this session heard"
+                  >
+                    Download recording
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -261,7 +261,11 @@ export async function fetchPage(
     surahMap.get(surahId)!.push({
       ayahNumber: ayah.numberInSurah,
       surahId,
-      textUthmani: ayah.text,
+      // Bismillah is shown as a header, not recited as part of verse 1
+      textUthmani:
+        ayah.numberInSurah === 1
+          ? stripBismillahPrefix(surahId, ayah.text)
+          : ayah.text,
       translation: translation?.text ?? "",
       translationAuthor: "",
       juz: ayah.juz,

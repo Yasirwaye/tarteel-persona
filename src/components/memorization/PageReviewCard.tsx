@@ -23,7 +23,7 @@ import {
   type MemorizedPage,
 } from "@/stores/memorizationStore";
 import { useAudioStore } from "@/stores/audioStore";
-import { tokenizeArabic } from "@/lib/arabicUtils";
+import { splitQuranWords } from "@/lib/arabicUtils";
 
 interface Props {
   memorizedPage: MemorizedPage;
@@ -50,21 +50,17 @@ export default function PageReviewCard({ memorizedPage, onComplete }: Props) {
     [allAyahs]
   );
 
-  const wordAyahMap = useMemo(() => {
+  const { wordAyahMap, expectedWords } = useMemo(() => {
     const map: { surahId: number; ayahNumber: number }[] = [];
+    const list: string[] = [];
     for (const ayah of allAyahs) {
-      const wordCount = tokenizeArabic(ayah.textUthmani).length;
-      for (let i = 0; i < wordCount; i++) {
+      for (const w of splitQuranWords(ayah.textUthmani)) {
+        list.push(w.normalized);
         map.push({ surahId: ayah.surahId, ayahNumber: ayah.ayahNumber });
       }
     }
-    return map;
+    return { wordAyahMap: map, expectedWords: list };
   }, [allAyahs]);
-
-  const expectedWords = useMemo(
-    () => tokenizeArabic(expectedText),
-    [expectedText]
-  );
 
   const {
     isRecording,
@@ -136,7 +132,7 @@ export default function PageReviewCard({ memorizedPage, onComplete }: Props) {
   {
     let cursor = 0;
     for (const a of allAyahs) {
-      const count = tokenizeArabic(a.textUthmani).length;
+      const count = splitQuranWords(a.textUthmani).length;
       ayahWordRanges.push({
         ayahNumber: a.ayahNumber,
         surahId: a.surahId,
@@ -226,7 +222,7 @@ export default function PageReviewCard({ memorizedPage, onComplete }: Props) {
               );
               if (!range) return null;
               const ayahWords = words.slice(range.start, range.end);
-              const originalWords = ayah.textUthmani.split(/\s+/).filter(Boolean);
+              const originalWords = splitQuranWords(ayah.textUthmani).map((t) => t.display);
 
               return (
                 <span key={`${ayah.surahId}-${ayah.ayahNumber}`}>

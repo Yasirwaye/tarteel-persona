@@ -9,6 +9,7 @@ import type { LiveWord } from "@/hooks/useLiveRecitation";
 import type { FullAyah } from "@/lib/quran-api";
 import MushafView from "@/components/quran/MushafView";
 import { DEFAULT_READER_CONFIG } from "@/types/reader";
+import { splitQuranWords } from "@/lib/arabicUtils";
 
 interface Props {
   ayahs: FullAyah[];
@@ -33,15 +34,13 @@ export default function LiveRecitationView({
   surahId,
   onRetryAyah,
 }: Props) {
-  // Map each ayah to its word range in the global word array
+  // Map each ayah to its word range in the global word array.
+  // Must use the same splitter as the expected-word list (pause marks folded in).
   const ayahWordRanges = (() => {
     const ranges: { ayahNumber: number; start: number; end: number }[] = [];
     let cursor = 0;
     for (const a of ayahs) {
-      const wordCount = a.textUthmani
-        .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g, "")
-        .split(/\s+/)
-        .filter(Boolean).length;
+      const wordCount = splitQuranWords(a.textUthmani).length;
       ranges.push({
         ayahNumber: a.ayahNumber,
         start: cursor,
@@ -241,8 +240,9 @@ function AyahInline({
   hideArabic,
   isRecording,
 }: AyahInlineProps) {
-  // Split ORIGINAL Uthmani text preserving diacritics
-  const originalWords = ayahText.split(/\s+/).filter(Boolean);
+  // Original Uthmani words (diacritics kept, pause marks attached to their word)
+  // in exactly the order/count used for matching, so colors never shift.
+  const originalWords = splitQuranWords(ayahText).map((t) => t.display);
 
   return (
     <>
@@ -251,7 +251,7 @@ function AyahInline({
         const status = liveWord?.status ?? "pending";
 
         return (
-          <span key={idx}>
+          <span key={idx} data-w={liveWord?.index} data-status={status}>
             <WordSpan
               originalText={originalWord}
               status={status}
