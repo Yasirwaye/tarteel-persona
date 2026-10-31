@@ -16,3 +16,9 @@ node_modules/
 .env.local
 
 
+
+# macOS Finder files
+.DS_Store
+
+# Recordings saved with the dev-only "Download recording" button
+recitation-*.wav
