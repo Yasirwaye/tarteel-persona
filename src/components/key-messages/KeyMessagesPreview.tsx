@@ -9,9 +9,13 @@ import { MESSAGE_CATEGORIES } from "@/lib/constants";
 
 interface KeyMessagesPreviewProps {
   surahId: number;
+  className?: string;
 }
 
-export default function KeyMessagesPreview({ surahId }: KeyMessagesPreviewProps) {
+export default function KeyMessagesPreview({
+  surahId,
+  className = "max-w-4xl mx-auto px-4 md:px-6 mt-16",
+}: KeyMessagesPreviewProps) {
   if (!hasKeyMessages(surahId)) {
     return null;
   }
@@ -28,7 +32,7 @@ export default function KeyMessagesPreview({ surahId }: KeyMessagesPreviewProps)
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
       transition={{ duration: 0.5 }}
-      className="max-w-4xl mx-auto px-4 md:px-6 mt-16"
+      className={className}
     >
       {/* Section header */}
       <div className="flex items-center justify-between mb-6">

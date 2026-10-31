@@ -1,7 +1,7 @@
 // src/components/audio/AudioPlayer.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -74,7 +74,23 @@ export default function AudioPlayer() {
   const [showSpeed, setShowSpeed] = useState(false);
   const [showSleep, setShowSleep] = useState(false);
 
-  if (!currentSurahId || !currentAyahNumber) return null;
+  // Publish the player's height as --audio-player-h so floating controls
+  // (e.g. the recite bar) sit above the player instead of covering it
+  const visible = !!(currentSurahId && currentAyahNumber);
+  const playerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = playerRef.current;
+    if (!visible || !el) return;
+    const ro = new ResizeObserver(() => root.style.setProperty("--audio-player-h", `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--audio-player-h");
+    };
+  }, [visible]);
+
+  if (!visible) return null;
 
   const surah = surahsMetadata.find((s) => s.id === currentSurahId);
   const reciterInfo = RECITERS[reciter];
@@ -101,6 +117,8 @@ export default function AudioPlayer() {
 
   return (
     <motion.div
+      ref={playerRef}
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       initial={{ y: 100 }}
       animate={{ y: 0 }}
       className={cn(

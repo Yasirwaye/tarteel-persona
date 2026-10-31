@@ -12,7 +12,7 @@ export interface ReaderConfig {
 }
 
 export const DEFAULT_READER_CONFIG: ReaderConfig = {
-  mode: "translation",
+  mode: "mushaf",
   fontSize: "lg",
   showTranslation: true,
   showTransliteration: false,

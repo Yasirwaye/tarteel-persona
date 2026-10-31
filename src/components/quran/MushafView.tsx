@@ -1,7 +1,7 @@
 // src/components/quran/MushafView.tsx
 "use client";
 
-import { useState, useMemo, useEffect} from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Loader2, Moon, Sun, Maximize2, Minimize2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -35,6 +35,15 @@ interface MushafViewProps {
   isReciting?: boolean;
   // When true, hide all Arabic glyphs except recited (pending words show as placeholders)
   hideArabic?: boolean;
+  // Ayah the reciter has reached: the page turns to follow it while reciting
+  followAyah?: number | null;
+  // Reports the first ayah on the page being shown (e.g. so "Listen" starts there)
+  onPageChange?: (firstAyahOnPage: number) => void;
+  // Open on the page holding this ayah (links from search, bookmarks, the player)
+  startAyah?: number | null;
+  // Swiping past the last / first page (e.g. to open the next / previous surah)
+  onSwipePastEnd?: () => void;
+  onSwipePastStart?: () => void;
 }
 
 export default function MushafView({
@@ -45,6 +54,11 @@ export default function MushafView({
   recitationWords,
   isReciting: _isReciting,  // intentionally unused — kept in props for API compat
   hideArabic = false,
+  followAyah = null,
+  onPageChange,
+  startAyah = null,
+  onSwipePastEnd,
+  onSwipePastStart,
 }: MushafViewProps) {
   // Build a lookup: "surahId:ayahNumber:wordIdxInAyah" → LiveWord status
   // We count word positions PER AYAH (skipping end-of-ayah glyphs)
@@ -76,7 +90,13 @@ export default function MushafView({
     return Array.from(set).sort((a, b) => a - b);
   }, [ayahs]);
 
-  const [pageIndex, setPageIndex] = useState(0);
+  // dir: 1 when the last turn went forward, -1 when it went back (drives the slide-in)
+  const [{ index: pageIndex, dir }, setPage] = useState({ index: 0, dir: 1 });
+  const goToPage = useCallback(
+    (index: number) =>
+      setPage((p) => (index === p.index ? p : { index, dir: index > p.index ? 1 : -1 })),
+    []
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // ESC key exits fullscreen
@@ -145,9 +165,62 @@ export default function MushafView({
 
     const targetIndex = pageNumbers.indexOf(playingAyah.page);
     if (targetIndex !== -1 && targetIndex !== pageIndex) {
-      setPageIndex(targetIndex);
+      goToPage(targetIndex);
     }
-  }, [currentAyahNumber, currentSurahId, surahId, ayahs, pageNumbers, pageIndex]);
+  }, [currentAyahNumber, currentSurahId, surahId, ayahs, pageNumbers, pageIndex, goToPage]);
+
+  useEffect(() => {
+    if (startAyah === null) return;
+    const ayah = ayahs.find((a) => a.ayahNumber === startAyah);
+    const target = ayah ? pageNumbers.indexOf(ayah.page) : -1;
+    if (target !== -1) goToPage(target);
+  }, [startAyah, ayahs, pageNumbers, goToPage]);
+
+  // While reciting, turn the page once the reciter moves on to the next one.
+  // Reacts only when the reached ayah changes, so the reciter can still swipe back to look.
+  useEffect(() => {
+    if (followAyah === null) return;
+    const ayah = ayahs.find((a) => a.ayahNumber === followAyah);
+    const target = ayah ? pageNumbers.indexOf(ayah.page) : -1;
+    if (target !== -1) goToPage(target);
+  }, [followAyah, ayahs, pageNumbers, goToPage]);
+
+  // After a page turn, bring the top of the new page back into view if the
+  // reader had scrolled down to the end of the previous one
+  const topRef = useRef<HTMLDivElement>(null);
+  const shownPage = useRef(currentPageNumber);
+  useEffect(() => {
+    if (shownPage.current === currentPageNumber) return;
+    shownPage.current = currentPageNumber;
+    const el = topRef.current;
+    if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [currentPageNumber]);
+
+  useEffect(() => {
+    const first = ayahs.find((a) => a.page === currentPageNumber);
+    if (first) onPageChange?.(first.ayahNumber);
+  }, [currentPageNumber, ayahs, onPageChange]);
+
+  // Horizontal swipe turns pages. The mushaf reads right-to-left, so swiping
+  // right (dragging the page toward the right edge) shows the next page.
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    swipeStart.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null;
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    const t = e.changedTouches[0];
+    if (!start || !t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const target = pageIndex + (dx > 0 ? 1 : -1);
+    if (target >= 0 && target < pageNumbers.length) goToPage(target);
+    else if (target >= pageNumbers.length) onSwipePastEnd?.();
+    else onSwipePastStart?.();
+  };
 
   if (pageNumbers.length === 0) {
     return (
@@ -196,19 +269,19 @@ export default function MushafView({
       )}
       <div className={isFullscreen ? "max-w-4xl mx-auto" : ""}>
       {/* Page nav + theme toggle */}
-      <div className="flex items-center justify-between mb-4 px-1">
+      <div ref={topRef} className="flex items-center justify-between mb-4 px-1 scroll-mt-2">
         <button
-          onClick={() => !isFirstPage && setPageIndex(pageIndex - 1)}
-          disabled={isFirstPage}
+          onClick={() => !isLastPage && goToPage(pageIndex + 1)}
+          disabled={isLastPage}
           className={cn(
             "flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-all",
-            isFirstPage
+            isLastPage
               ? "text-surface-700 cursor-not-allowed"
               : "text-surface-400 hover:text-surface-100 hover:bg-surface-800/60"
           )}
         >
           <ChevronLeft className="w-3.5 h-3.5" />
-          Previous
+          Next
         </button>
 
         <div className="flex items-center gap-3">
@@ -252,16 +325,16 @@ export default function MushafView({
         </div>
 
         <button
-          onClick={() => !isLastPage && setPageIndex(pageIndex + 1)}
-          disabled={isLastPage}
+          onClick={() => !isFirstPage && goToPage(pageIndex - 1)}
+          disabled={isFirstPage}
           className={cn(
             "flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-all",
-            isLastPage
+            isFirstPage
               ? "text-surface-700 cursor-not-allowed"
               : "text-surface-400 hover:text-surface-100 hover:bg-surface-800/60"
           )}
         >
-          Next
+          Previous
           <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -269,9 +342,12 @@ export default function MushafView({
       {/* Mushaf page */}
       <motion.div
         key={`${currentPageNumber}-${mushafTheme}`}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
+        initial={{ opacity: 0, x: dir * -40 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.25 }}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={() => (swipeStart.current = null)}
         className={cn(
           "relative rounded-2xl overflow-hidden border shadow-2xl",
           bgClass,

@@ -341,6 +341,34 @@ export const RECITERS: Record<string, ReciterInfo> = {
     path: "Ghamadi_40kbps",
     style: "Murattal",
   },
+  shuraim: {
+    id: "shuraim",
+    name: "Saud Al-Shuraim",
+    nameArabic: "سعود الشريم",
+    path: "Saood_ash-Shuraym_128kbps",
+    style: "Murattal",
+  },
+  maher: {
+    id: "maher",
+    name: "Maher Al-Muaiqly",
+    nameArabic: "ماهر المعيقلي",
+    path: "MaherAlMuaiqly128kbps",
+    style: "Murattal",
+  },
+  juhany: {
+    id: "juhany",
+    name: "Abdullah Al-Juhany",
+    nameArabic: "عبدالله الجهني",
+    path: "Abdullaah_3awwaad_Al-Juhaynee_128kbps",
+    style: "Murattal",
+  },
+  hudhaify: {
+    id: "hudhaify",
+    name: "Ali Al-Hudhaify",
+    nameArabic: "علي الحذيفي",
+    path: "Hudhaify_128kbps",
+    style: "Murattal",
+  },
 };
 
 /**

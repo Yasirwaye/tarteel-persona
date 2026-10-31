@@ -2,10 +2,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { surahsMetadata } from "@/data/quran/metadata/surahs";
-import QuranReader from "@/components/quran/QuranReader";
-import SurahHeader from "@/components/quran/SurahHeader";
-import SurahFooterNav from "@/components/quran/SurahFooterNav";
-import KeyMessagesPreview from "@/components/key-messages/KeyMessagesPreview";
+import RecitationSession from "@/components/recitation/RecitationSession";
 import ReadingTracker from "@/components/quran/ReadingTracker";
 
 interface PageProps {
@@ -34,17 +31,15 @@ export default async function SurahReaderPage({ params }: PageProps) {
   }
 
   return (
-    <div className="min-h-full pb-40">
+    <div className="min-h-full">
       <ReadingTracker
         surahId={surah.id}
         surahName={surah.name}
         surahNameArabic={surah.nameArabic}
         totalAyahs={surah.versesCount}
       />
-      <SurahHeader surah={surah} />
-      <QuranReader surah={surah} />
-      <KeyMessagesPreview surahId={surah.id} />
-      <SurahFooterNav currentSurahId={surah.id} />
+      {/* Mushaf only, with the same recite / listen / test controls as the Recitation section */}
+      <RecitationSession surah={surah} variant="reader" />
     </div>
   );
 }

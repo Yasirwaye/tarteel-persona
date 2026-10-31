@@ -56,7 +56,8 @@ export default function QuranReader({ surah }: QuranReaderProps) {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("reader-config");
-      if (saved) setConfig({ ...DEFAULT_READER_CONFIG, ...JSON.parse(saved) });
+      // Every surah opens in the default (mushaf) layout; other saved settings carry over
+      if (saved) setConfig({ ...DEFAULT_READER_CONFIG, ...JSON.parse(saved), mode: DEFAULT_READER_CONFIG.mode });
     } catch {
       // use defaults
     }

@@ -32,6 +32,9 @@ const RECITERS: Reciter[] = [
   { id: "sudais",     name: "Abdul Rahman Al-Sudais", arabicName: "عبد الرحمن السديس", style: "Imam of Haram" },
   { id: "shuraim",    name: "Saud Al-Shuraim",     arabicName: "سعود الشريم",      style: "Imam of Haram" },
   { id: "mishary",    name: "Mishary Al-Afasy",    arabicName: "مشاري العفاسي",    style: "Popular" },
+  { id: "maher",      name: "Maher Al-Muaiqly",    arabicName: "ماهر المعيقلي",    style: "Imam of Haram" },
+  { id: "juhany",     name: "Abdullah Al-Juhany",  arabicName: "عبدالله الجهني",   style: "Imam of Haram" },
+  { id: "hudhaify",   name: "Ali Al-Hudhaify",     arabicName: "علي الحذيفي",      style: "Imam of Masjid an-Nabawi" },
 ];
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2];

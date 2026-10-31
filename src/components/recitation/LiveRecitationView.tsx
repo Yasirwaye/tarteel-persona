@@ -21,6 +21,12 @@ interface Props {
   isRecording: boolean;
   surahId?: number;
   onRetryAyah?: (ayahNumber: number) => void;
+  // Mushaf mode: first ayah of the page on screen
+  onMushafPageChange?: (firstAyahOnPage: number) => void;
+  // Mushaf mode: open on this ayah's page; swipe past the ends
+  startAyah?: number | null;
+  onSwipePastEnd?: () => void;
+  onSwipePastStart?: () => void;
 }
 
 export default function LiveRecitationView({
@@ -33,6 +39,10 @@ export default function LiveRecitationView({
   isRecording,
   surahId,
   onRetryAyah,
+  onMushafPageChange,
+  startAyah,
+  onSwipePastEnd,
+  onSwipePastStart,
 }: Props) {
   // Map each ayah to its word range in the global word array.
   // Must use the same splitter as the expected-word list (pause marks folded in).
@@ -206,11 +216,18 @@ export default function LiveRecitationView({
           surahId={surahId || 1}
           ayahs={ayahs}
           config={DEFAULT_READER_CONFIG}
-          activeAyah={currentRecitingAyah}
+          activeAyah={currentRecitingAyah ?? startAyah ?? null}
           onActivate={() => {}}
           recitationWords={words}
           isReciting={isRecording}
           hideArabic={hideArabic}
+          // Follow the reciter only once they have been heard: before that the
+          // cursor sits on word 0, which would yank them back to the first page
+          followAyah={currentWordIndex > 0 ? currentRecitingAyah : null}
+          onPageChange={onMushafPageChange}
+          startAyah={startAyah}
+          onSwipePastEnd={onSwipePastEnd}
+          onSwipePastStart={onSwipePastStart}
         />
       </div>
     );

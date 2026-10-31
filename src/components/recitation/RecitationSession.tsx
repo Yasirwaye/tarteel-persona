@@ -1,14 +1,12 @@
 // src/components/recitation/RecitationSession.tsx
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
-import { motion } from "framer-motion";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
-  Mic,
-  Square,
-  Volume2,
   Loader2,
   ChevronRight,
   Eye,
@@ -16,8 +14,11 @@ import {
   RotateCw,
   Award,
   AlignLeft,
+  AlignRight,
   BookOpen,
   Layout,
+  Check,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -29,23 +30,49 @@ import { useAudioStore } from "@/stores/audioStore";
 import { scoreRecitation, splitQuranWords } from "@/lib/arabicUtils";
 import LiveRecitationView from "./LiveRecitationView";
 import RecitationLegend from "./RecitationLegend";
+import ReciteButton from "./ReciteButton";
+import SurahInsightsSheet from "@/components/key-messages/SurahInsightsSheet";
+import { hasKeyMessages } from "@/data/key-messages";
 
 interface Props {
   surah: SurahMeta;
+  /**
+   * "practice" (the Recitation section) shows a breadcrumb and surah title;
+   * "reader" (the Quran section) shows only the mushaf with the same controls.
+   */
+  variant?: "practice" | "reader";
 }
 
 type Stage = "ready" | "live" | "results";
 type ViewMode = "translation" | "continuous" | "mushaf";
 
 const VIEW_MODES: { id: ViewMode; label: string; icon: typeof BookOpen }[] = [
-  { id: "translation", label: "Translation", icon: AlignLeft },
-  { id: "continuous", label: "Arabic", icon: BookOpen },
   { id: "mushaf", label: "Mushaf", icon: Layout },
+  { id: "continuous", label: "Arabic", icon: AlignRight },
+  { id: "translation", label: "Translation", icon: AlignLeft },
 ];
 
-export default function RecitationSession({ surah }: Props) {
+export default function RecitationSession({ surah, variant = "practice" }: Props) {
+  const router = useRouter();
+  const isReader = variant === "reader";
   const [stage, setStage] = useState<Stage>("ready");
-  const [viewMode, setViewMode] = useState<ViewMode>("translation");
+  const [insightsOpen, setInsightsOpen] = useState(false);
+  // Ayah named in the URL (#ayah-5 or ?ayah=5): the mushaf opens on its page
+  const [startAyah, setStartAyah] = useState<number | null>(null);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const n = Number(url.hash.match(/ayah-(\d+)/)?.[1] ?? url.searchParams.get("ayah"));
+    if (n >= 1 && n <= surah.versesCount) setStartAyah(n);
+  }, [surah.id, surah.versesCount]);
+  // A surah opens in the mushaf layout; the layout button switches to the others
+  const [viewMode, setViewMode] = useState<ViewMode>("mushaf");
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
+  const [reciteMenuOpen, setReciteMenuOpen] = useState(false);
+  // First ayah of the mushaf page on screen, so Listen starts from there
+  const pageStartAyahRef = useRef(1);
+  const handleMushafPageChange = useCallback((ayah: number) => {
+    pageStartAyahRef.current = ayah;
+  }, []);
   const [showTranslation, setShowTranslation] = useState(true);
   const [hideArabic, setHideArabic] = useState(false);
   const [retryRange, setRetryRange] = useState<{
@@ -177,6 +204,16 @@ export default function RecitationSession({ surah }: Props) {
     await startRecording();
   };
 
+  const handleRecite = () => {
+    setHideArabic(false);
+    void handleStartReciting();
+  };
+
+  const handleTest = () => {
+    setHideArabic(true);
+    void handleStartReciting();
+  };
+
   const handleStopReciting = async () => {
     stoppedRef.current = true;
     await stopRecording();
@@ -222,7 +259,7 @@ export default function RecitationSession({ surah }: Props) {
         1
       );
     } else {
-      playSurah(surah.id, surah.versesCount, 1);
+      playSurah(surah.id, surah.versesCount, viewMode === "mushaf" ? pageStartAyahRef.current : 1);
     }
   };
 
@@ -234,8 +271,17 @@ export default function RecitationSession({ surah }: Props) {
     );
   }
 
+  // Swiping past the first / last mushaf page opens the neighbouring surah
+  const basePath = isReader ? "/surah" : "/recitation";
+  const goToSurah = (id: number) => {
+    if (stage === "live" || id < 1 || id > 114) return;
+    router.push(`${basePath}/${id}`);
+  };
+
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 pb-48">
+    <div className={cn("max-w-4xl mx-auto px-4 md:px-6 pb-48", isReader ? "pt-3" : "py-6")}>
+      {!isReader && (
+      <>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-surface-500 mb-6">
         <Link
@@ -271,78 +317,26 @@ export default function RecitationSession({ surah }: Props) {
             : `${surah.versesCount} verses`}
         </p>
       </div>
+      </>
+      )}
 
-      {/* Top controls bar */}
-      <div className="sticky top-16 z-20 flex flex-col sm:flex-row items-center justify-between gap-2 py-2 mb-4 bg-surface-950/80 backdrop-blur-xl rounded-xl">
-        {/* View mode switcher */}
-        <div className="flex items-center gap-1 p-1 rounded-xl glass border border-white/[0.05]">
-          {VIEW_MODES.map((m) => {
-            const Icon = m.icon;
-            const isActive = viewMode === m.id;
-            return (
-              <button
-                key={m.id}
-                onClick={() => setViewMode(m.id)}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all",
-                  isActive
-                    ? "bg-primary-700/40 text-primary-200"
-                    : "text-surface-400 hover:text-surface-200"
-                )}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{m.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Hide / Show Arabic */}
+      {/* Translation toggle (only in translation layout) */}
+      {viewMode === "translation" && (
+        <div className="sticky top-16 z-20 flex justify-end py-2 mb-4">
           <button
-            onClick={() => setHideArabic(!hideArabic)}
-            disabled={stage === "live"}
+            onClick={() => setShowTranslation(!showTranslation)}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-all",
-              hideArabic
-                ? "bg-purple-900/30 border-purple-700/30 text-purple-300"
-                : "bg-surface-800/60 border-white/[0.05] text-surface-300",
-              stage === "live" && "opacity-50 cursor-not-allowed"
+              "p-2 rounded-xl border transition-all",
+              showTranslation
+                ? "bg-primary-800/40 border-primary-700/30 text-primary-300"
+                : "bg-surface-800/60 border-white/[0.05] text-surface-400"
             )}
-            title={hideArabic ? "Show Arabic" : "Hide Arabic"}
+            title={showTranslation ? "Hide translations" : "Show translations"}
           >
-            {hideArabic ? (
-              <>
-                <EyeOff className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Hidden</span>
-              </>
-            ) : (
-              <>
-                <Eye className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Visible</span>
-              </>
-            )}
+            <AlignLeft className="w-4 h-4" />
           </button>
-
-          {/* Translation toggle (only in translation mode) */}
-          {viewMode === "translation" && (
-            <button
-              onClick={() => setShowTranslation(!showTranslation)}
-              className={cn(
-                "p-2 rounded-xl border transition-all",
-                showTranslation
-                  ? "bg-primary-800/40 border-primary-700/30 text-primary-300"
-                  : "bg-surface-800/60 border-white/[0.05] text-surface-400"
-              )}
-              title={
-                showTranslation ? "Hide translations" : "Show translations"
-              }
-            >
-              <AlignLeft className="w-4 h-4" />
-            </button>
-          )}
         </div>
-      </div>
+      )}
 
       {/* Stats — show during results */}
       {stage === "results" && (
@@ -403,6 +397,10 @@ export default function RecitationSession({ surah }: Props) {
         isRecording={isRecording}
         surahId={surah.id}
         onRetryAyah={stage === "results" ? handleRetryAyah : undefined}
+        onMushafPageChange={handleMushafPageChange}
+        startAyah={startAyah}
+        onSwipePastEnd={() => goToSurah(surah.id + 1)}
+        onSwipePastStart={() => goToSurah(surah.id - 1)}
       />
 
       {/* Results card */}
@@ -413,159 +411,201 @@ export default function RecitationSession({ surah }: Props) {
           className="mt-6"
         >
           <ResultsCard accuracy={accuracy} />
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+            <button
+              onClick={() => {
+                reset();
+                recordedAttemptRef.current = false;
+                setStage("ready");
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-sm font-semibold transition-all"
+            >
+              <RotateCw className="w-4 h-4" />
+              Try Again
+            </button>
+            {retryRange && (
+              <button
+                onClick={handleRetryAll}
+                className="px-4 py-2.5 rounded-xl bg-surface-800/60 border border-white/[0.06] text-surface-300 hover:bg-surface-800 text-xs font-medium transition-all"
+              >
+                Full Surah
+              </button>
+            )}
+            {!isReader && (
+              <Link
+                href="/recitation"
+                className="px-4 py-2.5 rounded-xl bg-surface-800/60 border border-white/[0.06] text-surface-300 hover:bg-surface-800 text-xs font-medium transition-all"
+              >
+                Done
+              </Link>
+            )}
+            {process.env.NODE_ENV === "development" && (
+              <button
+                onClick={() => {
+                  const wav = getRecordingWav();
+                  if (!wav) return toast.error("No recording to download");
+                  const url = URL.createObjectURL(wav);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `recitation-${surah.id}-${new Date().toISOString().slice(0, 19).replace(/:/g, "")}.wav`;
+                  a.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+                }}
+                className="px-3 py-2.5 rounded-xl text-surface-500 hover:text-surface-200 text-[11px] transition-all"
+                title="Development only: save the audio this session heard"
+              >
+                Download recording
+              </button>
+            )}
+          </div>
           <p className="text-xs text-surface-500 text-center mt-4">
             💡 Hover over any verse and click &quot;Retry&quot; to practice just that
-            verse
+            verse. Tap the mic to recite again.
           </p>
         </motion.div>
       )}
 
-      {/* Sticky bottom recording controls */}
-      <div className="fixed bottom-20 left-0 right-0 px-4 z-40 pointer-events-none">
-        <div className="max-w-2xl mx-auto pointer-events-auto">
-          <div className="glass rounded-2xl p-4 shadow-2xl">
-            {stage === "ready" && (
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handlePlayReference}
-                  className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-surface-800/60 border border-white/[0.06] text-surface-200 hover:bg-surface-800 text-xs font-medium transition-all"
-                >
-                  <Volume2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Listen</span>
-                </button>
-
-                <button
-                  onClick={handleStartReciting}
-                  className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-sm font-semibold transition-all shadow-glow"
-                >
-                  <Mic className="w-4 h-4" />
-                  {retryRange
-                    ? `Recite verse ${retryRange.fromAyah}`
-                    : "Start Reciting"}
-                </button>
-
-                {retryRange && (
-                  <button
-                    onClick={handleRetryAll}
-                    className="px-3 py-3 rounded-xl text-surface-400 hover:text-surface-100 text-xs transition-all"
-                    title="Back to full surah"
-                  >
-                    Full
-                  </button>
+      {/* Bottom bar: layout + hide on the left, mic on the right (hold the mic for Listen / Recite / Test) */}
+      <div
+        className={cn(
+          "fixed left-0 right-0 px-4 pointer-events-none",
+          reciteMenuOpen ? "z-[70]" : "z-40"
+        )}
+        // Sit above the audio player when it is showing (it publishes its height)
+        style={{ bottom: "calc(max(var(--audio-player-h, 0px), env(safe-area-inset-bottom)) + 1rem)" }}
+      >
+        <div className="max-w-2xl mx-auto flex items-end justify-between gap-3">
+          <div
+            className={cn(
+              "flex items-center gap-2 transition-opacity",
+              reciteMenuOpen ? "opacity-40" : "pointer-events-auto"
+            )}
+          >
+            <div className="relative">
+              <AnimatePresence>
+                {layoutMenuOpen && (
+                  <>
+                    <div className="fixed inset-0" onClick={() => setLayoutMenuOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 8 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute bottom-full left-0 mb-2 w-44 p-1 rounded-2xl glass border border-white/[0.08] shadow-2xl"
+                    >
+                      {VIEW_MODES.map((m) => {
+                        const Icon = m.icon;
+                        const isActive = viewMode === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() => {
+                              setViewMode(m.id);
+                              setLayoutMenuOpen(false);
+                            }}
+                            className={cn(
+                              "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all",
+                              isActive
+                                ? "bg-primary-700/40 text-primary-200"
+                                : "text-surface-300 hover:bg-surface-800/60"
+                            )}
+                          >
+                            <Icon className="w-4 h-4" />
+                            <span className="flex-1 text-left">{m.label}</span>
+                            {isActive && <Check className="w-4 h-4" />}
+                          </button>
+                        );
+                      })}
+                    </motion.div>
+                  </>
                 )}
-              </div>
+              </AnimatePresence>
+              <button
+                onClick={() => setLayoutMenuOpen((v) => !v)}
+                className="relative w-12 h-12 rounded-full glass border border-white/[0.08] shadow-xl flex items-center justify-center text-surface-200 hover:text-surface-50 transition-all"
+                title="Layout"
+                aria-label="Change layout"
+              >
+                <BookOpen className="w-5 h-5" />
+              </button>
+            </div>
+
+            <button
+              onClick={() => setHideArabic(!hideArabic)}
+              className={cn(
+                "w-12 h-12 rounded-full border shadow-xl flex items-center justify-center transition-all",
+                hideArabic
+                  ? "bg-purple-900/60 border-purple-700/40 text-purple-200"
+                  : "glass border-white/[0.08] text-surface-200 hover:text-surface-50"
+              )}
+              title={hideArabic ? "Show text" : "Hide text (test yourself)"}
+              aria-label={hideArabic ? "Show text" : "Hide text"}
+            >
+              {hideArabic ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
+
+            {hasKeyMessages(surah.id) && stage !== "live" && (
+              <button
+                onClick={() => setInsightsOpen(true)}
+                className="w-12 h-12 rounded-full glass border border-white/[0.08] shadow-xl flex items-center justify-center text-gold-400 hover:text-gold-300 transition-all"
+                title="Key messages & insights"
+                aria-label="Key messages and insights"
+              >
+                <Sparkles className="w-5 h-5" />
+              </button>
             )}
 
             {stage === "live" && (
-              <div className="space-y-3">
-                {/* Volume meter */}
-                <div className="flex items-center justify-center gap-0.5 h-6">
-                  {Array.from({ length: 24 }).map((_, i) => {
-                    const threshold = (i + 1) * 4;
-                    const active = volumeLevel > threshold;
-                    return (
-                      <motion.div
-                        key={i}
-                        animate={{
-                          height: active ? Math.min(24, 6 + i) : 3,
-                        }}
-                        transition={{ duration: 0.1 }}
-                        className={cn(
-                          "w-1 rounded-full transition-colors",
-                          active
-                            ? i < 14
-                              ? "bg-emerald-400"
-                              : i < 20
-                              ? "bg-gold-400"
-                              : "bg-red-400"
-                            : "bg-surface-700"
-                        )}
-                      />
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {isProcessing ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 text-primary-400 animate-spin" />
-                        <span className="text-xs text-surface-300">
-                          Analyzing recitation...
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                        <span className="text-xs text-surface-300">
-                          Recording — recite freely
-                        </span>
-                      </>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={handleStopReciting}
-                    disabled={isProcessing}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Square className="w-3 h-3 fill-white" />
-                    Stop
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {stage === "results" && (
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => {
-                    reset();
-                    recordedAttemptRef.current = false;
-                    setStage("ready");
-                  }}
-                  className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-sm font-semibold transition-all shadow-glow"
-                >
-                  <RotateCw className="w-4 h-4" />
-                  Try Again
-                </button>
-                {retryRange && (
-                  <button
-                    onClick={handleRetryAll}
-                    className="px-4 py-3 rounded-xl bg-surface-800/60 border border-white/[0.06] text-surface-300 hover:bg-surface-800 text-xs font-medium transition-all"
-                  >
-                    Full Surah
-                  </button>
-                )}
-                <Link
-                  href="/recitation"
-                  className="px-4 py-3 rounded-xl bg-surface-800/60 border border-white/[0.06] text-surface-300 hover:bg-surface-800 text-xs font-medium transition-all"
-                >
-                  Done
-                </Link>
-                {process.env.NODE_ENV === "development" && (
-                  <button
-                    onClick={() => {
-                      const wav = getRecordingWav();
-                      if (!wav) return toast.error("No recording to download");
-                      const url = URL.createObjectURL(wav);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `recitation-${surah.id}-${new Date().toISOString().slice(0, 19).replace(/:/g, "")}.wav`;
-                      a.click();
-                      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-                    }}
-                    className="px-3 py-3 rounded-xl text-surface-500 hover:text-surface-200 text-[11px] transition-all"
-                    title="Development only: save the audio this session heard"
-                  >
-                    Download recording
-                  </button>
+              <div className="flex items-center gap-2 px-3 h-12 rounded-full glass border border-white/[0.08] shadow-xl">
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 text-primary-400 animate-spin" />
+                    <span className="text-xs text-surface-300">Analyzing…</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-xs text-surface-300 tabular-nums">
+                      {Math.floor(duration / 60)}:{Math.floor(duration % 60).toString().padStart(2, "0")}
+                    </span>
+                  </>
                 )}
               </div>
             )}
+
+            {retryRange && stage !== "live" && (
+              <button
+                onClick={handleRetryAll}
+                className="h-12 px-4 rounded-full glass border border-white/[0.08] shadow-xl text-xs text-amber-300 transition-all"
+                title="Back to full surah"
+              >
+                Verse {retryRange.fromAyah} · Full
+              </button>
+            )}
+          </div>
+
+          <div className="pointer-events-auto">
+            <ReciteButton
+              isLive={stage === "live" && isRecording}
+              isProcessing={stage === "live" && isProcessing}
+              volumeLevel={volumeLevel}
+              menuOpen={reciteMenuOpen}
+              onMenuOpenChange={setReciteMenuOpen}
+              onStart={handleStartReciting}
+              onStop={handleStopReciting}
+              onListen={handlePlayReference}
+              onRecite={handleRecite}
+              onTest={handleTest}
+            />
           </div>
         </div>
       </div>
+
+      <SurahInsightsSheet
+        surahId={surah.id}
+        open={insightsOpen}
+        onClose={() => setInsightsOpen(false)}
+      />
     </div>
   );
 }
