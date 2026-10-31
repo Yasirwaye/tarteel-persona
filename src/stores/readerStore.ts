@@ -13,10 +13,19 @@ export interface ReadingPosition {
   timestamp: number;
 }
 
+export interface RecentRead {
+  surahId: number;
+  ayahNumber: number; // first ayah of the page last shown
+  page: number;
+  timestamp: number;
+}
+
 interface ReaderState {
   lastRead: ReadingPosition | null;
   recentSurahs: number[]; // surah IDs, most recent first, max 5
+  recentReads: RecentRead[]; // one per surah, most recent first, max 10
 
+  addRecentRead: (read: Omit<RecentRead, "timestamp">) => void;
   setLastRead: (position: Omit<ReadingPosition, "timestamp">) => void;
   clearLastRead: () => void;
   addRecentSurah: (surahId: number) => void;
@@ -28,6 +37,15 @@ export const useReaderStore = create<ReaderState>()(
     (set, get) => ({
       lastRead: null,
       recentSurahs: [],
+      recentReads: [],
+
+      addRecentRead: (read) =>
+        set((state) => ({
+          recentReads: [
+            { ...read, timestamp: Date.now() },
+            ...state.recentReads.filter((r) => r.surahId !== read.surahId),
+          ].slice(0, 10),
+        })),
 
       setLastRead: (position) => {
         set({

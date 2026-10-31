@@ -1,12 +1,18 @@
 // src/components/layout/Navbar.tsx
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Menu, Search } from "lucide-react";
+import { Bookmark, Menu, Moon, Search, Sun } from "lucide-react";
 import Link from "next/link";
 import PrayerBell from "@/components/layout/PrayerBell";
+import SurahIndexSheet from "@/components/quran/SurahIndexSheet";
 import { useReflectionsStore } from "@/stores/reflectionsStore";
+import { useMushafNavStore } from "@/stores/mushafNavStore";
+import { useBookmarkStore } from "@/stores/bookmarkStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { surahsMetadata } from "@/data/quran/metadata/surahs";
+import { cn } from "@/lib/utils";
 
 interface NavbarProps {
   onMenuToggle: () => void;
@@ -43,27 +49,90 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
     [reflectionsData]
   );
 
+  // On a surah's mushaf (/surah/N or /recitation/N) the title becomes a box with
+  // the surah, page, juz and hizb; tapping it opens the chapter / juz index
+  const position = useMushafNavStore((s) => s.position);
+  const routeMatch = pathname.match(/^\/(surah|recitation)\/(\d+)\/?$/);
+  const mushaf = routeMatch && position?.surahId === Number(routeMatch[2]) ? position : null;
+  const [indexOpen, setIndexOpen] = useState(false);
+  const mushafTheme = useSettingsStore((s) => s.mushafTheme);
+  const setMushafTheme = useSettingsStore((s) => s.setMushafTheme);
+  const bookmarked = useBookmarkStore((s) =>
+    mushaf ? s.bookmarks.some((b) => b.surahId === mushaf.surahId && b.ayahNumber === mushaf.firstAyah) : false
+  );
+  const toggleBookmark = useBookmarkStore((s) => s.toggleBookmark);
+  // A tap on the mushaf slides the navbar away (see RecitationSession)
+  const chromeHidden = useMushafNavStore((s) => s.chromeHidden);
+  const selectedAyah = useMushafNavStore((s) => s.selectedAyah);
+
   return (
-    <header className="h-16 flex items-center justify-between px-4 md:px-6 border-b border-white/[0.05] bg-surface-950/80 backdrop-blur-xl sticky top-0 z-20">
-      <div className="flex items-center gap-4">
+    <header
+      className={cn(
+        "h-16 flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-4 md:px-6 border-b border-white/[0.05] bg-surface-950/80 backdrop-blur-xl relative z-20 transition-[margin] duration-200",
+        mushaf && chromeHidden && "-mt-16"
+      )}
+    >
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         <button
           onClick={onMenuToggle}
-          className="p-2 rounded-xl text-surface-400 hover:text-surface-100 hover:bg-surface-800/60 transition-all"
+          className="p-1.5 sm:p-2 rounded-xl text-surface-400 hover:text-surface-100 hover:bg-surface-800/60 transition-all"
           aria-label="Toggle menu"
         >
           <Menu className="w-5 h-5" />
         </button>
-        <div>
-          <h1 className="text-sm font-semibold text-surface-100">
-            {pageInfo.title}
-          </h1>
-          <p className="text-xs text-surface-500 hidden sm:block">
-            {pageInfo.subtitle}
-          </p>
-        </div>
+        {mushaf ? (
+          <div className="flex items-stretch min-w-0 max-w-[16rem] rounded-xl bg-surface-800/70 border border-white/[0.08]">
+            <button
+              onClick={() => setIndexOpen(true)}
+              className="min-w-0 flex-1 pl-2.5 pr-0.5 py-1 text-left"
+              aria-label="Open chapter and juz list"
+            >
+              <span className="block text-sm font-semibold text-surface-50 truncate">
+                {surahsMetadata[mushaf.surahId - 1]?.name}
+              </span>
+              <span className="block text-[11px] tracking-tight text-surface-400 truncate">
+                {/* "Pg" on the narrowest phones so the hizb still fits */}
+                <span className="min-[380px]:hidden">Pg</span>
+                <span className="hidden min-[380px]:inline">Page</span> {mushaf.page} | Juz {mushaf.juz} | Hizb {mushaf.hizb}
+                {selectedAyah && ` | ${selectedAyah.surahId}:${selectedAyah.ayah}`}
+              </span>
+            </button>
+            <button
+              onClick={() =>
+                toggleBookmark({
+                  surahId: mushaf.surahId,
+                  ayahNumber: mushaf.firstAyah,
+                  surahName: surahsMetadata[mushaf.surahId - 1]?.name,
+                })
+              }
+              className="px-1.5 flex-shrink-0 flex items-center text-surface-400 hover:text-surface-100"
+              aria-label={bookmarked ? "Remove page bookmark" : "Bookmark this page"}
+            >
+              <Bookmark className={cn("w-5 h-5", bookmarked && "fill-primary-400 text-primary-400")} />
+            </button>
+          </div>
+        ) : (
+          <div>
+            <h1 className="text-sm font-semibold text-surface-100">
+              {pageInfo.title}
+            </h1>
+            <p className="text-xs text-surface-500 hidden sm:block">
+              {pageInfo.subtitle}
+            </p>
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className={cn("flex items-center flex-shrink-0", mushaf ? "gap-0" : "gap-1")}>
+        {mushaf && (
+          <button
+            onClick={() => setMushafTheme(mushafTheme === "dark" ? "light" : "dark")}
+            className="p-2 rounded-xl text-surface-400 hover:text-surface-100 hover:bg-surface-800/60 transition-all"
+            aria-label={mushafTheme === "dark" ? "Light mushaf" : "Dark mushaf"}
+          >
+            {mushafTheme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
+        )}
         <Link href="/search">
           <button
             className="p-2 rounded-xl text-surface-400 hover:text-surface-100 hover:bg-surface-800/60 transition-all"
@@ -90,6 +159,15 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
           </div>
         )}
       </div>
+      {mushaf && (
+        <SurahIndexSheet
+          open={indexOpen}
+          onClose={() => setIndexOpen(false)}
+          currentSurahId={mushaf.surahId}
+          currentJuz={mushaf.juz}
+          basePath={`/${routeMatch![1]}`}
+        />
+      )}
     </header>
   );
 }

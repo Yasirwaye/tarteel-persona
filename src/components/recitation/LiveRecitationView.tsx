@@ -1,13 +1,13 @@
 // src/components/recitation/LiveRecitationView.tsx
 "use client";
-import { log} from "@/lib/logger";
 
+import { Fragment } from "react";
 import { motion } from "framer-motion";
 import { RotateCw } from "lucide-react";
 import { cn, toArabicNumeral } from "@/lib/utils";
 import type { LiveWord } from "@/hooks/useLiveRecitation";
 import type { FullAyah } from "@/lib/quran-api";
-import MushafView from "@/components/quran/MushafView";
+import MushafView, { type MushafPageInfo } from "@/components/quran/MushafView";
 import { DEFAULT_READER_CONFIG } from "@/types/reader";
 import { splitQuranWords } from "@/lib/arabicUtils";
 
@@ -21,12 +21,16 @@ interface Props {
   isRecording: boolean;
   surahId?: number;
   onRetryAyah?: (ayahNumber: number) => void;
-  // Mushaf mode: first ayah of the page on screen
-  onMushafPageChange?: (firstAyahOnPage: number) => void;
-  // Mushaf mode: open on this ayah's page; swipe past the ends
-  startAyah?: number | null;
+  // Mushaf mode: the page on screen
+  onMushafPageChange?: (info: MushafPageInfo) => void;
+  // Mushaf mode: go to this ayah's page; swipe past the ends
+  jumpTo?: { ayah: number; seq: number } | null;
   onSwipePastEnd?: () => void;
   onSwipePastStart?: () => void;
+  // Mushaf mode: tap on the page; press-and-hold on an ayah; the ayah whose menu is open
+  onMushafTap?: () => void;
+  onAyahLongPress?: (surahId: number, ayahNumber: number) => void;
+  selectedAyah?: { surahId: number; ayah: number } | null;
 }
 
 export default function LiveRecitationView({
@@ -40,9 +44,12 @@ export default function LiveRecitationView({
   surahId,
   onRetryAyah,
   onMushafPageChange,
-  startAyah,
+  jumpTo,
   onSwipePastEnd,
   onSwipePastStart,
+  onMushafTap,
+  onAyahLongPress,
+  selectedAyah,
 }: Props) {
   // Map each ayah to its word range in the global word array.
   // Must use the same splitter as the expected-word list (pause marks folded in).
@@ -74,7 +81,7 @@ export default function LiveRecitationView({
 
     return (
       <div className="space-y-3">
-        {ayahs.map((ayah) => {
+        {ayahs.map((ayah, i) => {
           const range = ayahWordRanges.find(
             (r) => r.ayahNumber === ayah.ayahNumber
           );
@@ -84,8 +91,8 @@ export default function LiveRecitationView({
           const isCurrentlyReciting = currentAyahNumber === ayah.ayahNumber;
 
           return (
+            <Fragment key={ayah.ayahNumber}>
             <motion.div
-              key={ayah.ayahNumber}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className={cn(
@@ -130,9 +137,8 @@ export default function LiveRecitationView({
 
               {/* Arabic verse with per-word coloring */}
               <div
-                className="font-arabic text-2xl md:text-3xl text-right leading-[2.5] text-surface-100"
+                className="font-arabic text-4xl text-right leading-[3.5] text-surface-100"
                 dir="rtl"
-                style={{ wordSpacing: "0.15em" }}
               >
                 <AyahInline
                   ayahText={ayah.textUthmani}
@@ -143,11 +149,13 @@ export default function LiveRecitationView({
               </div>
 
               {showTranslation && (
-                <p className="text-xs text-surface-500 mt-4 leading-relaxed border-t border-white/[0.04] pt-3">
+                <p className="text-sm text-surface-300 mt-4 leading-relaxed border-t border-white/[0.04] pt-3">
                   {ayah.translation}
                 </p>
               )}
             </motion.div>
+            {ayahs[i + 1]?.page !== ayah.page && <PageEnd page={ayah.page} />}
+            </Fragment>
           );
         })}
       </div>
@@ -160,12 +168,14 @@ export default function LiveRecitationView({
   if (mode === "continuous") {
     return (
       <div className="glass rounded-3xl p-6 md:p-10">
+        {pagesOf(ayahs).map((pageAyahs) => (
+        <Fragment key={pageAyahs[0].page}>
         <div
-          className="font-arabic text-3xl md:text-4xl text-right leading-[3.5] text-surface-100"
+          className="font-arabic text-4xl text-right leading-[4] text-surface-100"
           dir="rtl"
-          style={{ wordSpacing: "0.2em" }}
+          style={{ wordSpacing: "0.15em" }}
         >
-          {ayahs.map((ayah) => {
+          {pageAyahs.map((ayah) => {
             const range = ayahWordRanges.find(
               (r) => r.ayahNumber === ayah.ayahNumber
             );
@@ -186,6 +196,9 @@ export default function LiveRecitationView({
             );
           })}
         </div>
+        <PageEnd page={pageAyahs[0].page} />
+        </Fragment>
+        ))}
       </div>
     );
   }
@@ -196,7 +209,6 @@ export default function LiveRecitationView({
   if (mode === "mushaf") {
     // Compute current ayah from cursor position in the global word array
     let currentRecitingAyah: number | null = null;
-    log('[MUSHAF] render state — isRecording:', isRecording, 'currentWordIndex:', currentWordIndex, 'words total:', words.length, 'first word ayah:', words[0]?.ayahNumber, 'current word:', words[currentWordIndex]);
     if (isRecording && currentWordIndex >= 0 && currentWordIndex < words.length) {
       const currentWord = words[currentWordIndex];
       if (currentWord) {
@@ -213,10 +225,12 @@ export default function LiveRecitationView({
           </div>
         )}
         <MushafView
+          // A new surah starts on its own first page
+          key={surahId}
           surahId={surahId || 1}
           ayahs={ayahs}
           config={DEFAULT_READER_CONFIG}
-          activeAyah={currentRecitingAyah ?? startAyah ?? null}
+          activeAyah={currentRecitingAyah ?? jumpTo?.ayah ?? null}
           onActivate={() => {}}
           recitationWords={words}
           isReciting={isRecording}
@@ -225,9 +239,12 @@ export default function LiveRecitationView({
           // cursor sits on word 0, which would yank them back to the first page
           followAyah={currentWordIndex > 0 ? currentRecitingAyah : null}
           onPageChange={onMushafPageChange}
-          startAyah={startAyah}
+          jumpTo={jumpTo}
           onSwipePastEnd={onSwipePastEnd}
           onSwipePastStart={onSwipePastStart}
+          onTap={onMushafTap}
+          onAyahLongPress={onAyahLongPress}
+          selectedAyah={selectedAyah}
         />
       </div>
     );
@@ -238,6 +255,27 @@ export default function LiveRecitationView({
 }
 
 
+
+/** Consecutive ayahs grouped by the mushaf page they start on */
+function pagesOf(ayahs: FullAyah[]): FullAyah[][] {
+  const pages: FullAyah[][] = [];
+  for (const a of ayahs) {
+    const last = pages[pages.length - 1];
+    if (last && last[0].page === a.page) last.push(a);
+    else pages.push([a]);
+  }
+  return pages;
+}
+
+/** End of a mushaf page in the flowing layouts: its page number, then a rule */
+function PageEnd({ page }: { page: number }) {
+  return (
+    <div className="py-4" aria-label={`End of page ${page}`}>
+      <p className="text-center text-sm text-surface-500 tabular-nums">{page}</p>
+      <hr className="mt-3 border-white/[0.12]" />
+    </div>
+  );
+}
 
 // ============================================
 // AYAH INLINE — renders ayah preserving original spacing

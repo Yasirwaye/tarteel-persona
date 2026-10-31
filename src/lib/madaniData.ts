@@ -47,14 +47,15 @@ export async function fetchMadaniPage(
     let pagePos = 0;
 
     const surahs = new Set<number>();
-    let juz = 1;
-    let hizb = 1;
+    // Juz / hizb of the page's first verse (as in a printed mushaf's header)
+    let juz = 0;
+    let hizb = 0;
 
     verses.forEach((v: { verse_key: string; juz_number?: number; hizb_number?: number; words?: Array<Record<string, unknown>> }) => {
       const [surahId, ayahNumber] = v.verse_key.split(":").map(Number);
       surahs.add(surahId);
-      if (v.juz_number) juz = v.juz_number;
-      if (v.hizb_number) hizb = v.hizb_number;
+      if (!juz && v.juz_number) juz = v.juz_number;
+      if (!hizb && v.hizb_number) hizb = v.hizb_number;
 
       (v.words || []).forEach((w) => {
         const ln = (w.line_number as number) || 0;
@@ -111,9 +112,14 @@ export async function fetchMadaniPage(
   }
 }
 
-/** Preload adjacent pages */
+/** A page fetched earlier this session, or null (lets a page turn render without waiting) */
+export function getCachedMadaniPage(pageNumber: number): MadaniPage | null {
+  return pageCache.get(pageNumber) ?? null;
+}
+
+/** Preload the two pages on each side, so swiping never waits on the network */
 export function preloadAdjacentPagesData(pageNumber: number): void {
-  [pageNumber - 1, pageNumber + 1]
+  [pageNumber - 1, pageNumber + 1, pageNumber - 2, pageNumber + 2]
     .filter((p) => p >= 1 && p <= 604)
     .forEach((p) => {
       fetchMadaniPage(p).catch(() => {});

@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Loader2, Moon, Sun, Maximize2, Minimize2, X } from "lucide-react";
+import { Loader2, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAudioStore } from "@/stores/audioStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -15,11 +15,13 @@ import type { ReaderConfig } from "@/types/reader";
 import type { LiveWord } from "@/hooks/useLiveRecitation";
 import {
   fetchMadaniPage,
+  getCachedMadaniPage,
   preloadAdjacentPagesData,
-  type MadaniPage,
+  type MadaniWord,
 } from "@/lib/madaniData";
 import {
   loadPageFont,
+  isPageFontLoaded,
   preloadAdjacentPages,
   getPageFontFamily,
 } from "@/lib/madaniFonts";
@@ -37,14 +39,34 @@ interface MushafViewProps {
   hideArabic?: boolean;
   // Ayah the reciter has reached: the page turns to follow it while reciting
   followAyah?: number | null;
-  // Reports the first ayah on the page being shown (e.g. so "Listen" starts there)
-  onPageChange?: (firstAyahOnPage: number) => void;
-  // Open on the page holding this ayah (links from search, bookmarks, the player)
-  startAyah?: number | null;
+  // Reports the page being shown (e.g. so "Listen" starts there and the navbar shows it)
+  onPageChange?: (info: MushafPageInfo) => void;
+  // Go to the page holding this ayah (links, the surah index); a new seq repeats the jump
+  jumpTo?: { ayah: number; seq: number } | null;
   // Swiping past the last / first page (e.g. to open the next / previous surah)
   onSwipePastEnd?: () => void;
   onSwipePastStart?: () => void;
+  // A tap on the page (not a swipe or press-and-hold), e.g. to show/hide the app's controls
+  onTap?: () => void;
+  // Press-and-hold on a word opens that ayah's menu
+  onAyahLongPress?: (surahId: number, ayahNumber: number) => void;
+  // Ayah whose menu is open (highlighted)
+  selectedAyah?: { surahId: number; ayah: number } | null;
 }
+
+export interface MushafPageInfo {
+  page: number;
+  firstAyah: number;
+  juz: number;
+  hizb: number;
+}
+
+// A drag this far (px), or a quick flick, turns the page
+const SWIPE_DISTANCE = 60;
+const FLICK_DISTANCE = 25;
+const FLICK_MS = 250;
+// Holding a word this long (ms) without moving opens its ayah's menu
+const LONG_PRESS_MS = 450;
 
 export default function MushafView({
   surahId,
@@ -56,9 +78,12 @@ export default function MushafView({
   hideArabic = false,
   followAyah = null,
   onPageChange,
-  startAyah = null,
+  jumpTo = null,
   onSwipePastEnd,
   onSwipePastStart,
+  onTap,
+  onAyahLongPress,
+  selectedAyah = null,
 }: MushafViewProps) {
   // Build a lookup: "surahId:ayahNumber:wordIdxInAyah" → LiveWord status
   // We count word positions PER AYAH (skipping end-of-ayah glyphs)
@@ -97,64 +122,49 @@ export default function MushafView({
       setPage((p) => (index === p.index ? p : { index, dir: index > p.index ? 1 : -1 })),
     []
   );
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  // ESC key exits fullscreen
-  useEffect(() => {
-    if (!isFullscreen) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsFullscreen(false);
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [isFullscreen]);
-
-  // Lock body scroll when in fullscreen
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    if (isFullscreen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [isFullscreen]);
-  const [madaniPage, setMadaniPage] = useState<MadaniPage | null>(null);
-  const [loadingPage, setLoadingPage] = useState(true);
-
   const { currentSurahId, currentAyahNumber } = useAudioStore();
   const mushafTheme = useSettingsStore((s) => s.mushafTheme);
-  const setMushafTheme = useSettingsStore((s) => s.setMushafTheme);
 
   const surah = surahsMetadata.find((s) => s.id === surahId);
   const currentPageNumber = pageNumbers[pageIndex];
 
-  // Load page data + font when page changes
+  // A page whose data and font are already cached renders at once (no spinner
+  // flash on a page turn); otherwise fetch both, then re-render
+  const [, setLoaded] = useState(0);
+  const madaniPage =
+    currentPageNumber && isPageFontLoaded(currentPageNumber)
+      ? getCachedMadaniPage(currentPageNumber)
+      : null;
   useEffect(() => {
     if (!currentPageNumber) return;
-
     let cancelled = false;
-    setLoadingPage(true);
-
-    Promise.all([
-      fetchMadaniPage(currentPageNumber),
-      loadPageFont(currentPageNumber),
-    ]).then(([pageData]) => {
+    Promise.all([fetchMadaniPage(currentPageNumber), loadPageFont(currentPageNumber)]).then(() => {
       if (cancelled) return;
-      setMadaniPage(pageData);
-      setLoadingPage(false);
-
-      // Preload adjacent
+      setLoaded((n) => n + 1);
       preloadAdjacentPagesData(currentPageNumber);
       preloadAdjacentPages(currentPageNumber);
     });
-
     return () => {
       cancelled = true;
     };
   }, [currentPageNumber]);
+
+  // Each word's position within its ayah on this page (end-of-ayah markers
+  // skipped, as LiveWords have none), for the recitation-status lookup
+  const wordIdxInAyah = useMemo(() => {
+    const idx = new Map<MadaniWord, number>();
+    const counters = new Map<string, number>();
+    for (const line of madaniPage?.lines ?? []) {
+      for (const w of line.words) {
+        if (w.charType === "end") continue;
+        const key = `${w.surahId}:${w.ayahNumber}`;
+        const n = counters.get(key) ?? 0;
+        idx.set(w, n);
+        counters.set(key, n + 1);
+      }
+    }
+    return idx;
+  }, [madaniPage]);
 
   // Auto-flip page when audio plays an ayah on different page
   useEffect(() => {
@@ -170,11 +180,11 @@ export default function MushafView({
   }, [currentAyahNumber, currentSurahId, surahId, ayahs, pageNumbers, pageIndex, goToPage]);
 
   useEffect(() => {
-    if (startAyah === null) return;
-    const ayah = ayahs.find((a) => a.ayahNumber === startAyah);
+    if (!jumpTo) return;
+    const ayah = ayahs.find((a) => a.ayahNumber === jumpTo.ayah);
     const target = ayah ? pageNumbers.indexOf(ayah.page) : -1;
     if (target !== -1) goToPage(target);
-  }, [startAyah, ayahs, pageNumbers, goToPage]);
+  }, [jumpTo, ayahs, pageNumbers, goToPage]);
 
   // While reciting, turn the page once the reciter moves on to the next one.
   // Reacts only when the reached ayah changes, so the reciter can still swipe back to look.
@@ -198,28 +208,113 @@ export default function MushafView({
 
   useEffect(() => {
     const first = ayahs.find((a) => a.page === currentPageNumber);
-    if (first) onPageChange?.(first.ayahNumber);
-  }, [currentPageNumber, ayahs, onPageChange]);
+    if (!first) return;
+    // Exact juz / hizb come with the page data; the table lookup only fills in until it loads
+    onPageChange?.({
+      page: currentPageNumber,
+      firstAyah: first.ayahNumber,
+      juz: madaniPage?.juzNumber || getJuzForAyah(surahId, first.ayahNumber),
+      hizb: madaniPage?.hizbNumber || getHizbForAyah(surahId, first.ayahNumber),
+    });
+  }, [currentPageNumber, ayahs, surahId, onPageChange, madaniPage]);
+
+  // Press-and-hold on a word (found through its data-ayah) opens the ayah's
+  // menu; a plain tap anywhere on the page calls onTap. A hold or a swipe
+  // swallows the click that follows it.
+  const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const suppressClick = useRef(false);
+  const cancelLongPress = () => {
+    if (longPress.current) clearTimeout(longPress.current);
+    longPress.current = null;
+  };
+  useEffect(() => cancelLongPress, []);
+  const handlePointerDown = (e: React.PointerEvent) => {
+    suppressClick.current = false;
+    cancelLongPress();
+    pressStart.current = { x: e.clientX, y: e.clientY };
+    const ayahEl = (e.target as HTMLElement).closest<HTMLElement>("[data-ayah]");
+    if (!ayahEl || !onAyahLongPress) return;
+    const [s, a] = ayahEl.dataset.ayah!.split(":").map(Number);
+    longPress.current = setTimeout(() => {
+      longPress.current = null;
+      suppressClick.current = true;
+      // The click that ends this hold would land on the menu that just opened
+      // under the finger: swallow it before anything sees it
+      const swallow = (ev: Event) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+      };
+      window.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", swallow, true), 1500);
+      navigator.vibrate?.(10);
+      onAyahLongPress(s, a);
+    }, LONG_PRESS_MS);
+  };
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const p = pressStart.current;
+    if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) cancelLongPress();
+  };
+  const handleClick = () => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    onTap?.();
+  };
 
   // Horizontal swipe turns pages. The mushaf reads right-to-left, so swiping
   // right (dragging the page toward the right edge) shows the next page.
-  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  // The page follows the finger while dragging (moved directly on the DOM node,
+  // no re-render per frame); a vertical drag is left to the browser's scroll.
+  const dragRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ x: number; y: number; t: number; dx: number; axis: "x" | "y" | null } | null>(null);
+  const setDragX = (dx: number, animate: boolean) => {
+    const el = dragRef.current;
+    if (!el) return;
+    el.style.transition = animate ? "transform 0.2s ease-out" : "none";
+    el.style.transform = dx ? `translateX(${dx}px)` : "";
+  };
   const handleTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
-    swipeStart.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null;
+    drag.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, t: Date.now(), dx: 0, axis: null } : null;
   };
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const start = swipeStart.current;
-    swipeStart.current = null;
-    const t = e.changedTouches[0];
-    if (!start || !t) return;
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const d = drag.current;
+    const t = e.touches[0];
+    if (!d || !t) return;
+    const dx = t.clientX - d.x;
+    const dy = t.clientY - d.y;
+    if (!d.axis && Math.max(Math.abs(dx), Math.abs(dy)) > 8) {
+      d.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      cancelLongPress();
+    }
+    if (d.axis !== "x") return;
     const target = pageIndex + (dx > 0 ? 1 : -1);
-    if (target >= 0 && target < pageNumbers.length) goToPage(target);
-    else if (target >= pageNumbers.length) onSwipePastEnd?.();
-    else onSwipePastStart?.();
+    const canGo =
+      (target >= 0 && target < pageNumbers.length) ||
+      (target >= pageNumbers.length ? !!onSwipePastEnd : !!onSwipePastStart);
+    d.dx = dx;
+    setDragX(canGo ? dx : dx / 4, false);
+  };
+  const handleTouchEnd = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d || d.axis !== "x") return;
+    suppressClick.current = true;
+    const dx = d.dx;
+    const turn = Math.abs(dx) > SWIPE_DISTANCE || (Math.abs(dx) > FLICK_DISTANCE && Date.now() - d.t < FLICK_MS);
+    const target = pageIndex + (dx > 0 ? 1 : -1);
+    if (turn && target >= 0 && target < pageNumbers.length) {
+      setDragX(0, false);
+      goToPage(target);
+    } else if (turn && target >= pageNumbers.length && onSwipePastEnd) {
+      onSwipePastEnd();
+    } else if (turn && target < 0 && onSwipePastStart) {
+      onSwipePastStart();
+    } else {
+      setDragX(0, true);
+    }
   };
 
   if (pageNumbers.length === 0) {
@@ -230,17 +325,14 @@ export default function MushafView({
     );
   }
 
-  const isFirstPage = pageIndex === 0;
-  const isLastPage = pageIndex === pageNumbers.length - 1;
-
   // Compute juz/hizb from first ayah of this page
   const firstAyahOnPage = ayahs.find((a) => a.page === currentPageNumber);
-  const juz = firstAyahOnPage
-    ? getJuzForAyah(surahId, firstAyahOnPage.ayahNumber)
-    : 1;
-  const hizb = firstAyahOnPage
-    ? getHizbForAyah(surahId, firstAyahOnPage.ayahNumber)
-    : 1;
+  const juz =
+    madaniPage?.juzNumber ||
+    (firstAyahOnPage ? getJuzForAyah(surahId, firstAyahOnPage.ayahNumber) : 1);
+  const hizb =
+    madaniPage?.hizbNumber ||
+    (firstAyahOnPage ? getHizbForAyah(surahId, firstAyahOnPage.ayahNumber) : 1);
 
   const isDark = mushafTheme === "dark";
 
@@ -251,103 +343,29 @@ export default function MushafView({
   const borderClass = isDark ? "border-white/10" : "border-black/10";
 
   return (
-    <div
-      className={cn(
-        isFullscreen
-          ? "fixed inset-0 z-[100] bg-surface-950 overflow-y-auto p-4 md:p-8"
-          : "pb-20"
-      )}
-    >
-      {isFullscreen && (
-        <button
-          onClick={() => setIsFullscreen(false)}
-          className="fixed top-4 right-4 z-[110] w-10 h-10 rounded-full bg-surface-800/80 hover:bg-surface-700 border border-white/[0.1] flex items-center justify-center text-surface-300 hover:text-surface-100 transition-all backdrop-blur-xl shadow-xl"
-          title="Exit fullscreen (ESC)"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      )}
-      <div className={isFullscreen ? "max-w-4xl mx-auto" : ""}>
-      {/* Page nav + theme toggle */}
-      <div ref={topRef} className="flex items-center justify-between mb-4 px-1 scroll-mt-2">
-        <button
-          onClick={() => !isLastPage && goToPage(pageIndex + 1)}
-          disabled={isLastPage}
-          className={cn(
-            "flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-all",
-            isLastPage
-              ? "text-surface-700 cursor-not-allowed"
-              : "text-surface-400 hover:text-surface-100 hover:bg-surface-800/60"
-          )}
-        >
-          <ChevronLeft className="w-3.5 h-3.5" />
-          Next
-        </button>
-
-        <div className="flex items-center gap-3">
-          <div className="text-xs text-surface-500">
-            <span>Page </span>
-            <span className="text-primary-400 font-mono font-bold">
-              {currentPageNumber}
-            </span>
-            <span className="text-surface-600 ml-1">
-              ({pageIndex + 1}/{pageNumbers.length})
-            </span>
-          </div>
-
-          <button
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-surface-800/60 border border-white/[0.06] text-surface-300 hover:text-surface-100 transition-all"
-            title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-          >
-            {isFullscreen ? (
-              <Minimize2 className="w-3.5 h-3.5" />
-            ) : (
-              <Maximize2 className="w-3.5 h-3.5" />
-            )}
-            <span className="hidden sm:inline">
-              {isFullscreen ? "Exit" : "Focus"}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setMushafTheme(isDark ? "light" : "dark")}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-surface-800/60 border border-white/[0.06] text-surface-300 hover:text-surface-100 transition-all"
-            title="Toggle mushaf theme"
-          >
-            {isDark ? (
-              <Sun className="w-3.5 h-3.5" />
-            ) : (
-              <Moon className="w-3.5 h-3.5" />
-            )}
-            <span className="hidden sm:inline">{isDark ? "Light" : "Dark"}</span>
-          </button>
-        </div>
-
-        <button
-          onClick={() => !isFirstPage && goToPage(pageIndex - 1)}
-          disabled={isFirstPage}
-          className={cn(
-            "flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-all",
-            isFirstPage
-              ? "text-surface-700 cursor-not-allowed"
-              : "text-surface-400 hover:text-surface-100 hover:bg-surface-800/60"
-          )}
-        >
-          Previous
-          <ChevronRight className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
+    <div>
+      <div ref={topRef} className="scroll-mt-2" />
+      <div
+        ref={dragRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={cancelLongPress}
+        onPointerCancel={cancelLongPress}
+        onClick={handleClick}
+        onContextMenu={(e) => e.preventDefault()}
+        className="select-none"
+        style={{ touchAction: "pan-y pinch-zoom", WebkitTouchCallout: "none" }}
+      >
       {/* Mushaf page */}
       <motion.div
         key={`${currentPageNumber}-${mushafTheme}`}
-        initial={{ opacity: 0, x: dir * -40 }}
+        initial={{ opacity: 0.4, x: dir * -60 }}
         animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.25 }}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={() => (swipeStart.current = null)}
+        transition={{ duration: 0.18, ease: "easeOut" }}
         className={cn(
           "relative rounded-2xl overflow-hidden border shadow-2xl",
           bgClass,
@@ -375,7 +393,7 @@ export default function MushafView({
 
         {/* 15-line mushaf content */}
         <div className="px-4 md:px-8 py-8">
-          {loadingPage || !madaniPage ? (
+          {!madaniPage ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className={cn("w-6 h-6 animate-spin", subtleTextClass)} />
             </div>
@@ -452,41 +470,22 @@ export default function MushafView({
                         
                       >
                         {(() => {
-                          // Count word position within each ayah on this line
-                          // (skipping end-of-ayah markers since LiveWords don't include them)
-                          const _ayahWordCounter = new Map<string, number>();
-                          // We also need to carry the count across lines — use a per-render
-                          // closure that tracks position from the start of the ayah on this page.
-                          // For simplicity: count from start of CURRENT line for this ayah.
-                          // Better: compute global index by scanning all prior lines too.
-
                           return line.words.map((word, idx) => {
+                          // A page can hold the end of the previous surah: match the surah too
                           const isPlayingNow =
                             currentSurahId === surahId &&
+                            word.surahId === surahId &&
                             currentAyahNumber === word.ayahNumber;
-                          const isClickActive = activeAyah === word.ayahNumber;
+                          const isClickActive = word.surahId === surahId && activeAyah === word.ayahNumber;
+                          const isSelected =
+                            selectedAyah?.surahId === word.surahId && selectedAyah.ayah === word.ayahNumber;
                           const isEndOfAyah = word.charType === "end";
 
                           // ── Recitation status lookup ──────────────────────
                           // Compute this word's index WITHIN its ayah (across all lines on this page)
                           let recitationStatus: LiveWord["status"] | undefined;
                           if (recitationStatusMap.size > 0 && !isEndOfAyah) {
-                            // Count all non-end words of this ayah BEFORE this word on the page
-                            let wordIdxInAyah = 0;
-                            for (const l of madaniPage.lines) {
-                              for (const w of l.words) {
-                                if (w === word) break;
-                                if (
-                                  w.surahId === word.surahId &&
-                                  w.ayahNumber === word.ayahNumber &&
-                                  w.charType !== "end"
-                                ) {
-                                  wordIdxInAyah++;
-                                }
-                              }
-                              if (l === line) break;
-                            }
-                            const key = `${word.surahId}:${word.ayahNumber}:${wordIdxInAyah}`;
+                            const key = `${word.surahId}:${word.ayahNumber}:${wordIdxInAyah.get(word)}`;
                             recitationStatus = recitationStatusMap.get(key);
                           }
 
@@ -542,6 +541,7 @@ export default function MushafView({
                                     : "bg-black/15 hover:bg-black/25"
                                 )}
                                 aria-label="hidden word"
+                                data-ayah={`${word.surahId}:${word.ayahNumber}`}
                               >
                                 {/* Keep the glyph in DOM but invisible so layout/spacing stays identical */}
                                 <span className="invisible">{word.text}</span>
@@ -562,11 +562,14 @@ export default function MushafView({
                                   isClickActive ? null : word.ayahNumber
                                 )
                               }
+                              data-ayah={`${word.surahId}:${word.ayahNumber}`}
                               className={cn(
                                 "cursor-pointer transition-all rounded px-0.5",
                                 // Recitation status takes priority over other highlights
                                 recitationBg
                                   ? recitationBg
+                                  : isSelected
+                                  ? isDark ? "bg-white/25" : "bg-black/15"
                                   : isPlayingNow
                                   ? isDark ? "bg-white/15" : "bg-black/10"
                                   : isClickActive

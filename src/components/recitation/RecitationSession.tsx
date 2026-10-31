@@ -22,7 +22,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import type { SurahMeta } from "@/data/quran/metadata/surahs";
+import { surahsMetadata, type SurahMeta } from "@/data/quran/metadata/surahs";
+import type { MushafPageInfo } from "@/components/quran/MushafView";
+import { useMushafNavStore } from "@/stores/mushafNavStore";
+import { useReaderStore } from "@/stores/readerStore";
 import { useSurah } from "@/hooks/useQuran";
 import { useLiveRecitation } from "@/hooks/useLiveRecitation";
 import { useRecitationStore } from "@/stores/recitationStore";
@@ -32,6 +35,7 @@ import LiveRecitationView from "./LiveRecitationView";
 import RecitationLegend from "./RecitationLegend";
 import ReciteButton from "./ReciteButton";
 import SurahInsightsSheet from "@/components/key-messages/SurahInsightsSheet";
+import VerseActionsSheet from "@/components/quran/VerseActionsSheet";
 import { hasKeyMessages } from "@/data/key-messages";
 
 interface Props {
@@ -57,22 +61,56 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
   const isReader = variant === "reader";
   const [stage, setStage] = useState<Stage>("ready");
   const [insightsOpen, setInsightsOpen] = useState(false);
-  // Ayah named in the URL (#ayah-5 or ?ayah=5): the mushaf opens on its page
-  const [startAyah, setStartAyah] = useState<number | null>(null);
+  // Ayah to show: from the URL (#ayah-5 or ?ayah=5) or a jump requested by the
+  // navbar's surah index; the mushaf turns to its page
+  const [jumpTo, setJumpTo] = useState<{ ayah: number; seq: number } | null>(null);
   useEffect(() => {
     const url = new URL(window.location.href);
     const n = Number(url.hash.match(/ayah-(\d+)/)?.[1] ?? url.searchParams.get("ayah"));
-    if (n >= 1 && n <= surah.versesCount) setStartAyah(n);
+    if (n >= 1 && n <= surah.versesCount) setJumpTo({ ayah: n, seq: 0 });
   }, [surah.id, surah.versesCount]);
+  const jump = useMushafNavStore((s) => s.jump);
+  useEffect(() => {
+    if (jump?.surahId === surah.id) setJumpTo({ ayah: jump.ayah, seq: jump.seq });
+  }, [jump, surah.id]);
   // A surah opens in the mushaf layout; the layout button switches to the others
   const [viewMode, setViewMode] = useState<ViewMode>("mushaf");
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
   const [reciteMenuOpen, setReciteMenuOpen] = useState(false);
   // First ayah of the mushaf page on screen, so Listen starts from there
   const pageStartAyahRef = useRef(1);
-  const handleMushafPageChange = useCallback((ayah: number) => {
-    pageStartAyahRef.current = ayah;
-  }, []);
+  const setNavPosition = useMushafNavStore((s) => s.setPosition);
+  const addRecentRead = useReaderStore((s) => s.addRecentRead);
+  const handleMushafPageChange = useCallback(
+    (info: MushafPageInfo) => {
+      pageStartAyahRef.current = info.firstAyah;
+      setNavPosition({ surahId: surah.id, ...info });
+      addRecentRead({ surahId: surah.id, ayahNumber: info.firstAyah, page: info.page });
+    },
+    [surah.id, setNavPosition, addRecentRead]
+  );
+  // The navbar's surah box only applies while the mushaf is on screen
+  useEffect(() => {
+    if (viewMode !== "mushaf") setNavPosition(null);
+  }, [viewMode, setNavPosition]);
+  // Tap on the mushaf hides / shows the navbar and bottom controls; press-and-hold opens an ayah's menu
+  const chromeHidden = useMushafNavStore((s) => s.chromeHidden);
+  const setChromeHidden = useMushafNavStore((s) => s.setChromeHidden);
+  const selectedAyah = useMushafNavStore((s) => s.selectedAyah);
+  const setSelectedAyah = useMushafNavStore((s) => s.setSelectedAyah);
+  const handleAyahLongPress = useCallback(
+    (surahId: number, ayah: number) => setSelectedAyah({ surahId, ayah }),
+    [setSelectedAyah]
+  );
+  const closeVerseMenu = useCallback(() => setSelectedAyah(null), [setSelectedAyah]);
+  useEffect(
+    () => () => {
+      setNavPosition(null);
+      setChromeHidden(false);
+      setSelectedAyah(null);
+    },
+    [setNavPosition, setChromeHidden, setSelectedAyah]
+  );
   const [showTranslation, setShowTranslation] = useState(true);
   const [hideArabic, setHideArabic] = useState(false);
   const [retryRange, setRetryRange] = useState<{
@@ -273,13 +311,25 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
 
   // Swiping past the first / last mushaf page opens the neighbouring surah
   const basePath = isReader ? "/surah" : "/recitation";
-  const goToSurah = (id: number) => {
+  const goToSurah = (id: number, atEnd = false) => {
     if (stage === "live" || id < 1 || id > 114) return;
+    // Going back lands on the previous surah's last page, as in a printed mushaf
+    if (atEnd) useMushafNavStore.getState().requestJump(id, surahsMetadata[id - 1].versesCount);
     router.push(`${basePath}/${id}`);
   };
 
   return (
-    <div className={cn("max-w-4xl mx-auto px-4 md:px-6 pb-48", isReader ? "pt-3" : "py-6")}>
+    <div
+      className={cn("max-w-4xl mx-auto px-4 md:px-6", isReader ? "pt-3" : "pt-6")}
+      // The mushaf page is the end of the scroll: only room for the floating
+      // controls (and the audio player) below it, none when they are hidden
+      style={{
+        paddingBottom:
+          viewMode === "mushaf" && stage !== "results"
+            ? `calc(var(--audio-player-h, 0px) + ${chromeHidden ? "0.75rem" : "6rem"})`
+            : "12rem",
+      }}
+    >
       {!isReader && (
       <>
       {/* Breadcrumb */}
@@ -398,9 +448,12 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
         surahId={surah.id}
         onRetryAyah={stage === "results" ? handleRetryAyah : undefined}
         onMushafPageChange={handleMushafPageChange}
-        startAyah={startAyah}
+        jumpTo={jumpTo}
         onSwipePastEnd={() => goToSurah(surah.id + 1)}
-        onSwipePastStart={() => goToSurah(surah.id - 1)}
+        onSwipePastStart={() => goToSurah(surah.id - 1, true)}
+        onMushafTap={() => setChromeHidden(!chromeHidden)}
+        onAyahLongPress={handleAyahLongPress}
+        selectedAyah={selectedAyah}
       />
 
       {/* Results card */}
@@ -468,8 +521,10 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
       {/* Bottom bar: layout + hide on the left, mic on the right (hold the mic for Listen / Recite / Test) */}
       <div
         className={cn(
-          "fixed left-0 right-0 px-4 pointer-events-none",
-          reciteMenuOpen ? "z-[70]" : "z-40"
+          "fixed left-0 right-0 px-4 pointer-events-none transition-all duration-200",
+          reciteMenuOpen ? "z-[70]" : "z-40",
+          // Hidden by a tap on the mushaf, except while reciting (the stop button lives here)
+          chromeHidden && stage !== "live" && !reciteMenuOpen && "opacity-0 translate-y-6 invisible"
         )}
         // Sit above the audio player when it is showing (it publishes its height)
         style={{ bottom: "calc(max(var(--audio-player-h, 0px), env(safe-area-inset-bottom)) + 1rem)" }}
@@ -600,6 +655,8 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
           </div>
         </div>
       </div>
+
+      <VerseActionsSheet target={selectedAyah} onClose={closeVerseMenu} basePath={basePath} />
 
       <SurahInsightsSheet
         surahId={surah.id}

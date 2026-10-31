@@ -59,8 +59,12 @@ export function loadPageFont(pageNumber: number): Promise<void> {
   return promise;
 }
 
+export function isPageFontLoaded(pageNumber: number): boolean {
+  return loadedFonts.has(pageNumber);
+}
+
 export function preloadAdjacentPages(pageNumber: number): void {
-  [pageNumber - 1, pageNumber + 1]
+  [pageNumber - 1, pageNumber + 1, pageNumber - 2, pageNumber + 2]
     .filter((p) => p >= 1 && p <= 604)
     .forEach((p) => {
       loadPageFont(p).catch(() => {});
