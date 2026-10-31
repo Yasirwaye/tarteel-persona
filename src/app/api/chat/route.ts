@@ -1,6 +1,10 @@
 import { warn } from "@/lib/logger";
 // src/app/api/chat/route.ts
 import { withCors, corsPreflight } from "@/lib/cors";
+
+// NVIDIA retires hosted models (meta/llama-3.3-70b-instruct went on 2026-08-26):
+// set NVIDIA_MODEL in .env.local to switch without a code change.
+const NVIDIA_MODEL = process.env.NVIDIA_MODEL || "nvidia/nemotron-3-ultra-550b-a55b";
 export const maxDuration = 60;
 export const runtime = "nodejs";
 
@@ -72,12 +76,15 @@ export async function POST(req: Request) {
           Accept: "text/event-stream",
         },
         body: JSON.stringify({
-          model: "meta/llama-3.3-70b-instruct",
+          model: NVIDIA_MODEL,
           messages: apiMessages,
           temperature: 0.5,
           top_p: 0.9,
           max_tokens: 1500,
           stream: true,
+          // Nemotron "thinks" before answering by default; answer directly
+          // (faster, and no reasoning text in the reply)
+          chat_template_kwargs: { enable_thinking: false },
         }),
       }
     );
@@ -181,7 +188,7 @@ export async function GET() {
       keyPreview: process.env.NVIDIA_API_KEY
         ? `${process.env.NVIDIA_API_KEY.slice(0, 8)}...`
         : "NOT SET",
-      model: "meta/llama-3.3-70b-instruct",
+      model: NVIDIA_MODEL,
     }),
     { status: 200, headers: withCors({ "Content-Type": "application/json" }) }
   );

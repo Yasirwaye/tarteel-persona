@@ -26,6 +26,14 @@ export interface MemorizedPage {
   lastReviewedAt: number | null;
   nextReviewAt: number;
   lapses: number;
+  /** When the page counted as memorized (marked in the tracker, or first passed review) */
+  memorizedAt?: number | null;
+}
+
+/** Pages per day or per week */
+export interface MemorizationGoal {
+  pages: number;
+  period: "day" | "week";
 }
 
 export interface ReviewLogEntry {
@@ -40,8 +48,16 @@ interface MemorizationStore {
   reviewLog: ReviewLogEntry[];
   dailyGoal: number;
 
+  memorizationGoal: MemorizationGoal | null;
+  reviewGoal: MemorizationGoal | null;
+
   startMemorizing: (pageNumber: number, juzNumber: number) => void;
+  /** Tracker: these pages are already memorized (they join the review schedule) */
+  markMemorized: (pageNumbers: number[]) => void;
   removePage: (pageNumber: number) => void;
+  removePages: (pageNumbers: number[]) => void;
+  setMemorizationGoal: (goal: MemorizationGoal | null) => void;
+  setReviewGoal: (goal: MemorizationGoal | null) => void;
   recordReview: (pageNumber: number, accuracy: number) => void;
   setDailyGoal: (goal: number) => void;
 
@@ -100,8 +116,31 @@ function accuracyToQuality(accuracy: number): number {
 function deriveStage(page: MemorizedPage): MemorizationStage {
   if (page.intervalDays >= 30 && page.consecutiveCorrect >= 5) return "mastered";
   if (page.intervalDays >= 14 && page.consecutiveCorrect >= 3) return "mature";
-  if (page.totalReviews >= 2) return "young";
+  if (page.totalReviews >= 2 || page.memorizedAt) return "young";
   return "learning";
+}
+
+/** A page counts as memorized once it is past the learning stage */
+export function isPageMemorized(page: MemorizedPage | undefined): boolean {
+  return !!page && page.stage !== "learning";
+}
+
+/** Start of the current goal period (today, or this week from Monday) */
+export function goalPeriodStart(period: MemorizationGoal["period"]): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (period === "week") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.getTime();
+}
+
+// Juz' of each page from the mushaf index (avoids importing it into the store)
+function juzOfPage(pageNumber: number): number {
+  const starts = [1, 22, 42, 62, 82, 102, 121, 142, 162, 182, 201, 222, 242, 262, 282, 302, 322, 342, 362, 382, 402, 422, 442, 462, 482, 502, 522, 542, 562, 582];
+  let juz = 1;
+  starts.forEach((p, i) => {
+    if (pageNumber >= p) juz = i + 1;
+  });
+  return juz;
 }
 
 export const useMemorizationStore = create<MemorizationStore>()(
@@ -110,6 +149,55 @@ export const useMemorizationStore = create<MemorizationStore>()(
       pages: {},
       reviewLog: [],
       dailyGoal: 1, // 1 page per day default
+      memorizationGoal: null,
+      reviewGoal: null,
+
+      markMemorized: (pageNumbers) => {
+        const now = Date.now();
+        set((state) => {
+          const pages = { ...state.pages };
+          for (const pageNumber of pageNumbers) {
+            const id = pageNumber.toString();
+            const existing = pages[id];
+            if (existing) {
+              const updated = { ...existing, memorizedAt: existing.memorizedAt ?? now };
+              updated.stage = deriveStage(updated);
+              pages[id] = updated;
+              continue;
+            }
+            // Already memorized: start reviewing it tomorrow
+            pages[id] = {
+              id,
+              pageNumber,
+              juzNumber: juzOfPage(pageNumber),
+              stage: "young",
+              easeFactor: 2.5,
+              intervalDays: 1,
+              consecutiveCorrect: 0,
+              totalReviews: 0,
+              totalCorrect: 0,
+              bestAccuracy: 0,
+              averageAccuracy: 0,
+              addedAt: now,
+              lastReviewedAt: null,
+              nextReviewAt: now + DAY_MS,
+              lapses: 0,
+              memorizedAt: now,
+            };
+          }
+          return { pages };
+        });
+      },
+
+      removePages: (pageNumbers) =>
+        set((state) => {
+          const pages = { ...state.pages };
+          for (const p of pageNumbers) delete pages[p.toString()];
+          return { pages };
+        }),
+
+      setMemorizationGoal: (memorizationGoal) => set({ memorizationGoal }),
+      setReviewGoal: (reviewGoal) => set({ reviewGoal }),
 
       startMemorizing: (pageNumber, juzNumber) => {
         const id = pageNumber.toString();
@@ -185,6 +273,7 @@ export const useMemorizationStore = create<MemorizationStore>()(
         };
 
         updated.stage = deriveStage(updated);
+        if (updated.stage !== "learning" && !updated.memorizedAt) updated.memorizedAt = Date.now();
 
         set((state) => ({
           pages: { ...state.pages, [id]: updated },

@@ -17,8 +17,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMemorizationStore } from "@/stores/memorizationStore";
+import { useHydrated } from "@/hooks/useHydrated";
+import CompletionCard from "@/components/memorization/CompletionCard";
+import GoalsSection from "@/components/memorization/GoalsSection";
 
 export default function MemorizationPage() {
+  const hydrated = useHydrated();
   const { pages, getDueReviews, getLearningQueue, getStats } =
     useMemorizationStore();
 
@@ -29,6 +33,9 @@ export default function MemorizationPage() {
   const sortedPages = useMemo(() => {
     return Object.values(pages).sort((a, b) => a.pageNumber - b.pageNumber);
   }, [pages]);
+
+  // Saved progress exists only in the browser: render the empty shell until hydration ends
+  if (!hydrated) return <div className="min-h-screen" />;
 
   return (
     <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 pb-32">
@@ -47,6 +54,16 @@ export default function MemorizationPage() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Completion across the whole mushaf → tracker (Chapter / Juz / Hizb) */}
+      <div className="mb-8">
+        <CompletionCard pages={pages} href="/memorization/progress" />
+      </div>
+
+      {/* Goals */}
+      <div className="mb-8 pt-6 border-t border-white/[0.08]">
+        <GoalsSection />
       </div>
 
       {/* Today's session */}

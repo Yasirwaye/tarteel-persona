@@ -25,8 +25,10 @@ interface Props {
   onMushafPageChange?: (info: MushafPageInfo) => void;
   // Mushaf mode: go to this ayah's page; swipe past the ends
   jumpTo?: { ayah: number; seq: number } | null;
-  onSwipePastEnd?: () => void;
-  onSwipePastStart?: () => void;
+  onSwipePastEnd?: (page: number) => boolean | void;
+  onSwipePastStart?: (page: number) => boolean | void;
+  // Mushaf mode: space kept free below the page for the floating controls
+  mushafBottomInset?: number;
   // Mushaf mode: tap on the page; press-and-hold on an ayah; the ayah whose menu is open
   onMushafTap?: () => void;
   onAyahLongPress?: (surahId: number, ayahNumber: number) => void;
@@ -47,6 +49,7 @@ export default function LiveRecitationView({
   jumpTo,
   onSwipePastEnd,
   onSwipePastStart,
+  mushafBottomInset,
   onMushafTap,
   onAyahLongPress,
   selectedAyah,
@@ -218,12 +221,6 @@ export default function LiveRecitationView({
 
     return (
       <div className="relative">
-        {isRecording && currentRecitingAyah !== null && (
-          <div className="mb-3 flex items-center justify-center gap-2 text-xs text-primary-400">
-            <span className="w-2 h-2 rounded-full bg-primary-400 animate-pulse" />
-            <span>Reciting verse {currentRecitingAyah}</span>
-          </div>
-        )}
         <MushafView
           // A new surah starts on its own first page
           key={surahId}
@@ -242,6 +239,7 @@ export default function LiveRecitationView({
           jumpTo={jumpTo}
           onSwipePastEnd={onSwipePastEnd}
           onSwipePastStart={onSwipePastStart}
+          bottomInset={mushafBottomInset}
           onTap={onMushafTap}
           onAyahLongPress={onAyahLongPress}
           selectedAyah={selectedAyah}

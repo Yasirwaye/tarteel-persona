@@ -72,7 +72,7 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
         mushaf && chromeHidden && "-mt-16"
       )}
     >
-      <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+      <div className={cn("flex items-center gap-2 sm:gap-4 min-w-0", mushaf && "flex-1")}>
         <button
           onClick={onMenuToggle}
           className="p-1.5 sm:p-2 rounded-xl text-surface-400 hover:text-surface-100 hover:bg-surface-800/60 transition-all"
@@ -81,7 +81,8 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
           <Menu className="w-5 h-5" />
         </button>
         {mushaf ? (
-          <div className="flex items-stretch min-w-0 max-w-[16rem] rounded-xl bg-surface-800/70 border border-white/[0.08]">
+          // Stretches up to the icons on the right (as in Tarteel)
+          <div className="flex-1 flex items-stretch min-w-0 max-w-xl rounded-xl bg-surface-800/70 border border-white/[0.08]">
             <button
               onClick={() => setIndexOpen(true)}
               className="min-w-0 flex-1 pl-2.5 pr-0.5 py-1 text-left"

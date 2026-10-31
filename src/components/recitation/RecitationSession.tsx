@@ -22,7 +22,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { surahsMetadata, type SurahMeta } from "@/data/quran/metadata/surahs";
+import type { SurahMeta } from "@/data/quran/metadata/surahs";
+import { PAGE_STARTS } from "@/data/quran/metadata/pages";
 import type { MushafPageInfo } from "@/components/quran/MushafView";
 import { useMushafNavStore } from "@/stores/mushafNavStore";
 import { useReaderStore } from "@/stores/readerStore";
@@ -311,11 +312,22 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
 
   // Swiping past the first / last mushaf page opens the neighbouring surah
   const basePath = isReader ? "/surah" : "/recitation";
-  const goToSurah = (id: number, atEnd = false) => {
-    if (stage === "live" || id < 1 || id > 114) return;
-    // Going back lands on the previous surah's last page, as in a printed mushaf
-    if (atEnd) useMushafNavStore.getState().requestJump(id, surahsMetadata[id - 1].versesCount);
-    router.push(`${basePath}/${id}`);
+  // Swiping off this surah's first / last page opens mushaf page `page` in the
+  // surah that continues there: going forward, the surah of the page's first
+  // verse; going back, the surah of its last verse (from its first verse on that page)
+  const openMushafPage = (page: number, forward: boolean): boolean => {
+    if (stage === "live" || page < 1 || page > 604) return false;
+    const start = PAGE_STARTS[page - 1];
+    let surahId = start.surahId;
+    let ayah = start.ayah;
+    if (!forward) {
+      const next = PAGE_STARTS[page]; // first verse of the following page
+      surahId = !next ? 114 : next.ayah === 1 ? next.surahId - 1 : next.surahId;
+      ayah = start.surahId === surahId ? start.ayah : 1;
+    }
+    useMushafNavStore.getState().requestJump(surahId, ayah);
+    if (surahId !== surah.id) router.push(`${basePath}/${surahId}`);
+    return true;
   };
 
   return (
@@ -326,7 +338,7 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
       style={{
         paddingBottom:
           viewMode === "mushaf" && stage !== "results"
-            ? `calc(var(--audio-player-h, 0px) + ${chromeHidden ? "0.75rem" : "6rem"})`
+            ? `calc(var(--audio-player-h, 0px) + ${chromeHidden && stage !== "live" ? "0.75rem" : "6rem"})`
             : "12rem",
       }}
     >
@@ -449,8 +461,10 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
         onRetryAyah={stage === "results" ? handleRetryAyah : undefined}
         onMushafPageChange={handleMushafPageChange}
         jumpTo={jumpTo}
-        onSwipePastEnd={() => goToSurah(surah.id + 1)}
-        onSwipePastStart={() => goToSurah(surah.id - 1, true)}
+        onSwipePastEnd={(page) => openMushafPage(page, true)}
+        onSwipePastStart={(page) => openMushafPage(page, false)}
+        // Room for the floating controls under the page (none when hidden)
+        mushafBottomInset={chromeHidden && stage !== "live" ? 12 : 96}
         onMushafTap={() => setChromeHidden(!chromeHidden)}
         onAyahLongPress={handleAyahLongPress}
         selectedAyah={selectedAyah}
