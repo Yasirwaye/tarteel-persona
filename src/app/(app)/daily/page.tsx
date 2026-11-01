@@ -156,7 +156,7 @@ export default function DailyPage() {
 
             {/* Arabic */}
             <div
-              className="font-arabic text-3xl md:text-4xl text-right text-surface-50 leading-loose mb-6"
+              className="font-arabic text-4xl text-right text-surface-50 leading-[3.5] mb-6"
               dir="rtl"
             >
               {ayahData.textUthmani}

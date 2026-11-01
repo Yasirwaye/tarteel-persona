@@ -30,10 +30,19 @@ export interface MemorizedPage {
   memorizedAt?: number | null;
 }
 
-/** Pages per day or per week */
+/** Part of the Quran a goal covers: the whole Quran, or one / a run of chapters, juz', hizbs or pages */
+export interface GoalRange {
+  kind: "quran" | "chapter" | "juz" | "hizb" | "page";
+  from: number;
+  to: number;
+}
+
+/** Portion (pages per day or per week) over a range of the Quran */
 export interface MemorizationGoal {
   pages: number;
   period: "day" | "week";
+  /** Missing on goals set before ranges existed = the whole Quran */
+  range?: GoalRange;
 }
 
 export interface ReviewLogEntry {

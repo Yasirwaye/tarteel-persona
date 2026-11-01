@@ -76,3 +76,20 @@ export function mushafUnits() {
   cache ??= { surahs: buildSurahs(), juz: buildFromRubs(8), hizb: buildFromRubs(4) };
   return cache;
 }
+
+/** Mushaf pages a goal range covers, in order */
+export function pagesInRange(range: { kind: "quran" | "chapter" | "juz" | "hizb" | "page"; from: number; to: number }): number[] {
+  const lo = Math.min(range.from, range.to);
+  const hi = Math.max(range.from, range.to);
+  if (range.kind === "quran") return Array.from({ length: TOTAL_PAGES }, (_, i) => i + 1);
+  if (range.kind === "page") return Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+  const all = mushafUnits();
+  const units = range.kind === "chapter" ? all.surahs : range.kind === "juz" ? all.juz : all.hizb;
+  return [...new Set(units.slice(lo - 1, hi).flatMap((u) => u.pages.map((p) => p.page)))].sort((a, b) => a - b);
+}
+
+/** Surah and ayah a page starts with */
+export function pageStartVerse(page: number): { surahId: number; ayah: number } {
+  const s = PAGE_STARTS[page - 1];
+  return { surahId: s.surahId, ayah: s.ayah };
+}
