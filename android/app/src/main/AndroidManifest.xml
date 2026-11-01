@@ -38,6 +38,10 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Reciting: the web view's microphone (getUserMedia) needs both;
+         RECORD_AUDIO also comes with the speech-recognition plugin -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Prayer-time notifications must fire on the minute, even in Doze:
          SCHEDULE_EXACT_ALARM on Android 12, USE_EXACT_ALARM from Android 13 -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />

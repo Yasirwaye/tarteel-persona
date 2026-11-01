@@ -5,6 +5,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { apiUrl } from "@/lib/apiBase";
 import { PcmRecorder } from "@/lib/pcmRecorder";
 import { StreamingRecognizer } from "@/lib/streamingRecognizer";
+import { NativeSpeechRecognizer } from "@/lib/nativeSpeech";
+import { isNative } from "@/lib/platform";
 import { loadQuranVocabulary, type WordStatus } from "@/lib/arabicUtils";
 import {
   LiveRecitationEngine,
@@ -104,7 +106,12 @@ export function useLiveRecitation({
   const engineRef = useRef<LiveRecitationEngine | null>(null);
   // Last session's audio, kept for the dev-only "Download recording" button
   const lastRecordingRef = useRef<PcmRecorder | null>(null);
-  const fastRef = useRef<StreamingRecognizer | null>(null);
+  // Fast lane: the browser's recognizer, or the phone's own in the installed app
+  const fastRef = useRef<{ stop(): void } | null>(null);
+  // Compressed copy of the session's audio (kept on the device for listening back)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  const recordingBlobRef = useRef<Blob | null>(null);
   const sessionIdRef = useRef(0);
   const durationRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef(0);
@@ -198,13 +205,23 @@ export function useLiveRecitation({
       engineRef.current = engine;
       engine.start();
 
-      if (FAST_LANE_ENABLED && StreamingRecognizer.isSupported()) {
-        const fast = new StreamingRecognizer((text) => {
-          if (sessionId === sessionIdRef.current) engine.hint(text);
+      const hint = (text: string) => {
+        if (sessionId === sessionIdRef.current) engine.hint(text);
+      };
+      if (FAST_LANE_ENABLED && isNative()) {
+        // The app's web view has no Web Speech API: use the phone's recognizer
+        NativeSpeechRecognizer.prepare().then(async (ok) => {
+          if (!ok || sessionId !== sessionIdRef.current) return;
+          const fast = new NativeSpeechRecognizer(hint);
+          fastRef.current = fast;
+          await fast.start().catch(() => {});
         });
+      } else if (FAST_LANE_ENABLED && StreamingRecognizer.isSupported()) {
+        const fast = new StreamingRecognizer(hint);
         if (fast.start(rec.audioTrack ?? undefined)) fastRef.current = fast;
       }
 
+      startRecordingCopy(rec.audioTrack);
       startTimeRef.current = Date.now();
       durationRef.current = setInterval(() => {
         if (sessionId !== sessionIdRef.current) return;
@@ -223,6 +240,35 @@ export function useLiveRecitation({
     }
   }, [allowStartAnywhere, applyUpdate, cleanup, initialState]);
 
+  /** Record a compressed copy of the mic (Opus/AAC, ~0.25 MB/min) alongside recognition */
+  function startRecordingCopy(track: MediaStreamTrack | null) {
+    recordingBlobRef.current = null;
+    mediaChunksRef.current = [];
+    if (!track || typeof MediaRecorder === "undefined") return;
+    const mimeType = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find((t) => MediaRecorder.isTypeSupported(t));
+    try {
+      const mr = new MediaRecorder(new MediaStream([track]), { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 32000 });
+      mr.ondataavailable = (e) => e.data.size && mediaChunksRef.current.push(e.data);
+      mr.start(1000);
+      mediaRecorderRef.current = mr;
+    } catch {
+      mediaRecorderRef.current = null;
+    }
+  }
+
+  function stopRecordingCopy(): Promise<void> {
+    const mr = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (!mr || mr.state === "inactive") return Promise.resolve();
+    return new Promise((resolve) => {
+      mr.onstop = () => {
+        recordingBlobRef.current = new Blob(mediaChunksRef.current, { type: mr.mimeType || "audio/webm" });
+        resolve();
+      };
+      mr.stop();
+    });
+  }
+
   const stopRecording = useCallback(async () => {
     const sessionId = sessionIdRef.current;
     const engine = engineRef.current;
@@ -230,6 +276,8 @@ export function useLiveRecitation({
     durationRef.current = null;
     fastRef.current?.stop();
     fastRef.current = null;
+    // Finish the compressed copy before the mic track ends
+    await stopRecordingCopy();
     // Stop the mic; the captured audio stays available for the last window
     recorderRef.current?.stop();
     recorderRef.current = null;
@@ -274,6 +322,16 @@ export function useLiveRecitation({
     };
   }, [cleanup]);
 
+  /** The last session's recording for keeping: compressed when the browser can, else WAV */
+  const takeRecording = useCallback((): Blob | null => {
+    if (recordingBlobRef.current?.size) return recordingBlobRef.current;
+    const rec = lastRecordingRef.current;
+    return rec && rec.sampleCount > 0 ? rec.toWav(0, rec.sampleCount, "pcm16") : null;
+  }, []);
+
+  /** When the last session started (ms) */
+  const getStartedAt = useCallback(() => startTimeRef.current, []);
+
   /** The last session's audio as a 16-bit WAV, exactly as the app heard it (for debugging). */
   const getRecordingWav = useCallback((): Blob | null => {
     const rec = lastRecordingRef.current;
@@ -287,5 +345,7 @@ export function useLiveRecitation({
     reset,
     resetRange,
     getRecordingWav,
+    takeRecording,
+    getStartedAt,
   };
 }
