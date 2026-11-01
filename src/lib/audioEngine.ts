@@ -14,6 +14,11 @@ import { useAudioStore } from "@/stores/audioStore";
  *   of a fresh network load.
  * - Each file's own leading/trailing silence (up to 1.5 s for some reciters)
  *   is skipped, keeping a short natural breath, so ayahs flow like one recitation.
+ *
+ * Preferred over all of that: whole-surah mode. The surah's single continuous
+ * recording plays (mp3quran.net) and the current ayah follows its timings, so
+ * ayahs the reciter joins (wasl) sound exactly as recited, with one timer for
+ * the surah. Per-ayah files are the fallback.
  */
 
 // How many upcoming ayahs to keep downloaded ahead of the one playing
@@ -25,6 +30,67 @@ const CACHE_NAME = "quran-audio-v1";
 const KEEP_SILENCE_S = 0.12;
 // Below this level (dBFS, 10 ms windows) counts as silence
 const SILENCE_DB = -45;
+
+// Whole-surah recordings with ayah timings, by our reciter id
+// (mp3quran.net "read" id and audio folder)
+const SURAH_AUDIO: Record<string, { read: number; folder: string }> = {
+  mishary: { read: 123, folder: "mishary-alafasy/r1" },
+  sudais: { read: 54, folder: "abdulrahman-sudais/r1" },
+  husary: { read: 118, folder: "mahmoud-husary/r1" },
+  minshawi: { read: 112, folder: "muhammad-minshawi/r1" },
+  abdulbasit: { read: 51, folder: "abdulbasit-abdulsamad/r1" },
+  ghamdi: { read: 30, folder: "saad-ghamdi/r1" },
+  shuraim: { read: 31, folder: "saud-shuraim/r1" },
+  maher: { read: 133, folder: "maher-muaiqly/r3" },
+  juhany: { read: 62, folder: "abdullah-juhani/r1" },
+  hudhaify: { read: 74, folder: "ali-hudhaifi/r1" },
+};
+
+/** One ayah's place in the surah recording (seconds) */
+interface AyahTiming {
+  ayah: number;
+  start: number;
+  end: number;
+}
+
+interface SurahRecording {
+  key: string; // reciter:surah
+  surahId: number;
+  url: string;
+  timings: AyahTiming[];
+}
+
+const surahTimings = new Map<string, Promise<SurahRecording | null>>();
+
+/** The surah's continuous recording and ayah timings, or null (then per-ayah files are used) */
+function loadSurahRecording(reciter: string, surahId: number): Promise<SurahRecording | null> {
+  const src = SURAH_AUDIO[reciter];
+  if (!src) return Promise.resolve(null);
+  const key = `${reciter}:${surahId}`;
+  let p = surahTimings.get(key);
+  if (!p) {
+    p = fetch(`https://www.mp3quran.net/api/v3/ayat_timing?surah=${surahId}&read=${src.read}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((rows: { ayah: number; start_time: number; end_time: number }[]) => {
+        const timings = rows
+          .filter((r) => r.ayah >= 1)
+          .map((r) => ({ ayah: r.ayah, start: r.start_time / 1000, end: r.end_time / 1000 }));
+        if (!timings.length) return null;
+        return {
+          key,
+          surahId,
+          url: `https://cdn.mp3quran.net/audio/${src.folder}/${String(surahId).padStart(3, "0")}.mp3`,
+          timings,
+        };
+      })
+      .catch(() => {
+        surahTimings.delete(key); // try again next time
+        return null;
+      });
+    surahTimings.set(key, p);
+  }
+  return p;
+}
 
 /** Where the recitation starts and ends inside an ayah file (seconds) */
 export interface Trim {
@@ -135,6 +201,17 @@ class AyahAudioCache {
   }
 }
 
+/**
+ * A play() that failed for real stops playback. An AbortError only means a new
+ * source was loaded before it started (e.g. the surah recording arriving), and
+ * the new source is played anyway.
+ */
+function playFailed(err: unknown) {
+  if ((err as DOMException)?.name === "AbortError") return;
+  console.error("Play error:", err);
+  useAudioStore.getState().setPlaying(false);
+}
+
 class AudioEngine {
   private players: HTMLAudioElement[] = [];
   private active = 0;
@@ -143,6 +220,12 @@ class AudioEngine {
   private cache = new AyahAudioCache();
   private unlocked = false;
   private endTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Whole-surah mode: the recording in the active player (null = per-ayah files) */
+  private surah: SurahRecording | null = null;
+  private boundaryTimer: ReturnType<typeof setInterval> | null = null;
+  /** Set while the engine itself moves the store to the next ayah */
+  private following = false;
+  private requestSeq = 0;
 
   private get audio(): HTMLAudioElement | null {
     return this.players[this.active] ?? null;
@@ -190,7 +273,15 @@ class AudioEngine {
       if (isActive()) this.clearEndTimer();
     });
     el.addEventListener("ended", () => {
-      if (isActive()) this.advance();
+      if (!isActive()) return;
+      if (this.surah) this.checkBoundary(true);
+      else this.advance();
+    });
+    el.addEventListener("playing", () => {
+      if (isActive() && this.surah) this.startBoundaryLoop();
+    });
+    el.addEventListener("seeked", () => {
+      if (isActive() && this.surah) this.syncAyahToTime();
     });
     el.addEventListener("error", () => {
       if (!isActive() || !this.keys[this.active]) return;
@@ -213,6 +304,7 @@ class AudioEngine {
   /** End the ayah where its recitation ends, skipping the file's trailing silence */
   private scheduleEnd() {
     this.clearEndTimer();
+    if (this.surah) return;
     const el = this.audio;
     const trim = this.cache.trim(this.keys[this.active]);
     if (!el || !trim || el.paused || trim.end >= el.duration - 0.05) return;
@@ -242,7 +334,7 @@ class AudioEngine {
     if (state.isPlaying && this.urlFor(state) === endedUrl && this.keys[this.active] === endedUrl && this.audio) {
       this.audio.currentTime = 0;
       this.startAtVoice(this.audio, endedUrl);
-      this.audio.play().catch(() => useAudioStore.getState().setPlaying(false));
+      this.audio.play().catch(playFailed);
     }
   }
 
@@ -274,19 +366,18 @@ class AudioEngine {
         lastSurah = state.currentSurahId;
         lastAyah = state.currentAyahNumber;
         lastReciter = state.reciter;
-        this.loadAyah(getAyahAudioUrl(state.currentSurahId, state.currentAyahNumber, state.reciter));
+        // The engine moved to the next ayah itself (whole-surah mode): keep playing
+        if (!this.following) this.play(state.currentSurahId, state.currentAyahNumber, state.reciter);
       }
 
       // Playing state changed
       if (state.isPlaying !== lastPlaying) {
         if (state.isPlaying) {
-          this.audio?.play().catch((err) => {
-            console.error("Play error:", err);
-            useAudioStore.getState().setPlaying(false);
-          });
+          this.audio?.play().catch(playFailed);
           this.unlockStandby();
         } else {
           this.players.forEach((p) => p.pause());
+          this.stopBoundaryLoop();
         }
         lastPlaying = state.isPlaying;
       }
@@ -327,6 +418,134 @@ class AudioEngine {
       .finally(() => (el.muted = false));
   }
 
+  /** Play an ayah: from the surah recording when there is one, else its own file */
+  private play(surahId: number, ayah: number, reciter: string) {
+    const seq = ++this.requestSeq;
+    // Already in this surah's recording: just move to the ayah
+    if (this.surah && this.surah.key === `${reciter}:${surahId}`) {
+      this.seekToAyah(ayah);
+      return;
+    }
+    if (!SURAH_AUDIO[reciter]) {
+      this.leaveSurahMode();
+      this.loadAyah(getAyahAudioUrl(surahId, ayah, reciter));
+      return;
+    }
+    useAudioStore.getState().setLoading(true);
+    loadSurahRecording(reciter, surahId).then((rec) => {
+      if (seq !== this.requestSeq) return; // a newer request won
+      const state = useAudioStore.getState();
+      if (!rec || !rec.timings.some((t) => t.ayah === ayah)) {
+        this.leaveSurahMode();
+        this.loadAyah(getAyahAudioUrl(surahId, ayah, reciter));
+        return;
+      }
+      this.enterSurahMode(rec, ayah, state.isPlaying);
+    });
+  }
+
+  private enterSurahMode(rec: SurahRecording, ayah: number, autoplay: boolean) {
+    this.clearEndTimer();
+    this.standby?.pause();
+    const el = this.audio!;
+    this.surah = rec;
+    this.keys[this.active] = rec.url;
+    el.src = rec.url;
+    el.load();
+    this.applySettings(el);
+    // Ayah 1 starts from the very beginning (isti'adha / basmala), others at their timing
+    const start = ayah === 1 ? 0 : rec.timings.find((t) => t.ayah === ayah)!.start;
+    el.addEventListener(
+      "loadedmetadata",
+      () => {
+        el.currentTime = start;
+        useAudioStore.getState().setDuration(el.duration);
+      },
+      { once: true }
+    );
+    if (autoplay) el.play().catch(playFailed);
+  }
+
+  private leaveSurahMode() {
+    if (!this.surah) return;
+    this.surah = null;
+    this.stopBoundaryLoop();
+    this.keys[this.active] = "";
+  }
+
+  private timingOf(ayah: number): AyahTiming | undefined {
+    return this.surah?.timings.find((t) => t.ayah === ayah);
+  }
+
+  private seekToAyah(ayah: number) {
+    const el = this.audio;
+    const t = this.timingOf(ayah);
+    if (!el || !t) return;
+    el.currentTime = ayah === 1 ? 0 : t.start;
+    if (useAudioStore.getState().isPlaying) el.play().catch(playFailed);
+  }
+
+  // Ayah boundaries are checked every 50 ms (timeupdate is too coarse for repeats)
+  private startBoundaryLoop() {
+    if (this.boundaryTimer) return;
+    this.boundaryTimer = setInterval(() => this.checkBoundary(false), 50);
+  }
+
+  private stopBoundaryLoop() {
+    if (this.boundaryTimer) clearInterval(this.boundaryTimer);
+    this.boundaryTimer = null;
+  }
+
+  /**
+   * At the end of the current ayah let the store decide what comes next
+   * (repeat, range, sleep timer, stop). The recording simply plays on when that
+   * is the following ayah; otherwise it jumps there.
+   */
+  private checkBoundary(fileEnded: boolean) {
+    const el = this.audio;
+    const state = useAudioStore.getState();
+    if (!el || !this.surah || state.currentSurahId !== this.surah.surahId || !state.currentAyahNumber) return;
+    const cur = this.timingOf(state.currentAyahNumber);
+    if (!cur || (!fileEnded && el.currentTime < cur.end)) return;
+
+    const recording = this.surah;
+    this.following = true;
+    try {
+      useAudioStore.getState().handleEnded();
+    } finally {
+      this.following = false;
+    }
+    const next = useAudioStore.getState();
+    if (!next.isPlaying) {
+      el.pause();
+      return;
+    }
+    if (next.currentSurahId !== recording.surahId || !next.currentAyahNumber) {
+      this.play(next.currentSurahId!, next.currentAyahNumber!, next.reciter);
+      return;
+    }
+    const plainNext = next.currentAyahNumber === state.currentAyahNumber + 1 && !fileEnded;
+    if (!plainNext) this.seekToAyah(next.currentAyahNumber); // repeat, loop, range start
+  }
+
+  /** After a seek (progress bar), point the store at the ayah being heard */
+  private syncAyahToTime() {
+    const el = this.audio;
+    const rec = this.surah;
+    if (!el || !rec) return;
+    const t = el.currentTime;
+    const at = rec.timings.find((x) => t >= x.start && t < x.end) ?? (t < rec.timings[0].start ? rec.timings[0] : null);
+    const state = useAudioStore.getState();
+    if (!at || at.ayah === state.currentAyahNumber) return;
+    const queueIndex = state.queue.findIndex((q) => q.surahId === rec.surahId && q.ayahNumber === at.ayah);
+    this.following = true;
+    try {
+      useAudioStore.setState({ currentAyahNumber: at.ayah, ...(queueIndex >= 0 ? { queueIndex } : {}) });
+    } finally {
+      this.following = false;
+    }
+  }
+
   private applySettings(el: HTMLAudioElement) {
     const state = useAudioStore.getState();
     el.playbackRate = state.speed;
@@ -348,7 +567,7 @@ class AudioEngine {
       this.startAtVoice(el, url);
       useAudioStore.getState().setLoading(false);
       if (Number.isFinite(el.duration)) useAudioStore.getState().setDuration(el.duration);
-      if (state.isPlaying) el.play().catch(() => useAudioStore.getState().setPlaying(false));
+      if (state.isPlaying) el.play().catch(playFailed);
     } else {
       const el = this.audio;
       this.keys[this.active] = url;
@@ -359,7 +578,7 @@ class AudioEngine {
       if (this.cache.trim(url)) {
         el.addEventListener("loadedmetadata", () => this.startAtVoice(el, url), { once: true });
       }
-      if (state.isPlaying) el.play().catch(() => useAudioStore.getState().setPlaying(false));
+      if (state.isPlaying) el.play().catch(playFailed);
       // Streaming this one: once downloaded and analysed, its end can be trimmed too
       this.cache.fetch(url, () => this.inUse()).then(() => {
         if (this.keys[this.active] === url) this.scheduleEnd();
@@ -375,6 +594,7 @@ class AudioEngine {
 
   /** Download the next few ayahs and put the very next one in the standby player */
   private prepareAhead() {
+    if (this.surah) return;
     const state = useAudioStore.getState();
     const { queue, queueIndex, reciter, repeatMode } = state;
     if (!queue.length) return;
@@ -413,6 +633,9 @@ class AudioEngine {
   /** Stop and release both players */
   stop() {
     this.clearEndTimer();
+    this.requestSeq++;
+    this.surah = null;
+    this.stopBoundaryLoop();
     this.players.forEach((p) => {
       p.pause();
       p.removeAttribute("src");
