@@ -29,6 +29,9 @@ import { useMushafNavStore } from "@/stores/mushafNavStore";
 import { useReaderStore } from "@/stores/readerStore";
 import { useSurah } from "@/hooks/useQuran";
 import { useLiveRecitation } from "@/hooks/useLiveRecitation";
+import { useReadingSession } from "@/hooks/useReadingSession";
+import { useSessionStore, sessionId, type SessionMistake } from "@/stores/sessionStore";
+import { saveRecording } from "@/lib/recordingsDb";
 import { useRecitationStore } from "@/stores/recitationStore";
 import { useAudioStore } from "@/stores/audioStore";
 import { scoreRecitation, splitQuranWords } from "@/lib/arabicUtils";
@@ -168,6 +171,8 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
     stopRecording,
     reset,
     getRecordingWav,
+    takeRecording,
+    getStartedAt,
   } = useLiveRecitation({
     expectedText,
     wordAyahMap,
@@ -175,6 +180,16 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
     // Full-surah practice follows the reciter from any verse; a retry starts at its verse
     allowStartAnywhere: !retryRange,
   });
+
+  // Reading sessions (Activity page): the mushaf page on screen, paused while reciting
+  const navPage = useMushafNavStore((st) => (st.position?.surahId === surah.id ? st.position.page : null));
+  useReadingSession(surah.id, ayahs, viewMode === "mushaf" ? navPage : null, stage === "live");
+
+  // The Quran's own spelling of each expected word (for the mistakes list)
+  const displayWords = useMemo(
+    () => activeAyahs.flatMap((a) => splitQuranWords(a.textUthmani).map((t) => t.display)),
+    [activeAyahs]
+  );
 
   useEffect(() => {
     if (error) toast.error(error);
@@ -228,6 +243,39 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
           expectedText: words.map((w) => w.expected).join(" "),
           spokenText: spokenSoFar,
           duration,
+        });
+
+        // Recitation session for the Activity page, with its recording kept on this device
+        const mistakes: SessionMistake[] = countedWords
+          .map((w, i) => ({ w, i }))
+          .filter(({ w }) => w.status === "incorrect" || w.status === "missed")
+          .map(({ w, i }) => ({
+            ayah: w.ayahNumber,
+            word: displayWords[i] ?? w.expected,
+            kind: w.status === "incorrect" ? ("incorrect" as const) : ("missed" as const),
+            heard: w.status === "incorrect" ? w.spoken : null,
+          }));
+        const recitedAyahs = new Set(attemptedWords.map((w) => w.ayahNumber));
+        const pages = [...new Set(activeAyahs.filter((a) => recitedAyahs.has(a.ayahNumber)).map((a) => a.page))];
+        const startedAt = getStartedAt() || Date.now() - duration * 1000;
+        const id = sessionId();
+        const blob = takeRecording();
+        const recordingId = blob ? id : null;
+        if (blob) saveRecording(id, blob).catch(() => toast.error("Couldn't save the recording on this device"));
+        useSessionStore.getState().upsertSession({
+          id,
+          kind: "recitation",
+          surahId: surah.id,
+          fromAyah: firstAyah,
+          toAyah: lastAyah,
+          startedAt,
+          endedAt: startedAt + Math.round(duration * 1000),
+          activeSeconds: Math.round(duration),
+          verses: recitedAyahs.size,
+          pages,
+          accuracy: score.accuracy,
+          mistakes,
+          recordingId,
         });
       }
 

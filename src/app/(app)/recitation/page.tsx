@@ -9,8 +9,24 @@ import { cn } from "@/lib/utils";
 import { surahsMetadata } from "@/data/quran/metadata/surahs";
 import { useRecitationStore } from "@/stores/recitationStore";
 import { useHydrated } from "@/hooks/useHydrated";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-export default function RecitationPage() {
+/**
+ * The Recitation section is disabled for now: reciting happens on the Quran
+ * page (mic button), and past sessions live on the Activity page. The old page
+ * is kept below, unused, so it can be switched back on.
+ */
+export default function RecitationPageDisabled() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/surah");
+  }, [router]);
+  return null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function RecitationPage() {
   const hydrated = useHydrated();
   const [search, setSearch] = useState("");
   const { attempts, getStats } = useRecitationStore();

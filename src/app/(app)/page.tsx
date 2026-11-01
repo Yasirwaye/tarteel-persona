@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
+  Activity,
   BookOpen,
   Mic,
   MessageSquare,
@@ -238,6 +239,7 @@ export default function HomePage() {
             </div>
           </Link>
 
+          {/* Recitation section disabled for now (recite from the Quran page instead):
           <Link href="/recitation">
             <div className="aspect-square md:aspect-auto md:p-5 p-3 rounded-2xl bg-gradient-to-br from-gold-900/30 to-surface-900/50 border border-gold-800/20 hover:border-gold-600/40 transition-all flex flex-col items-center md:items-start justify-center md:justify-start gap-2 text-center md:text-left">
               <Mic className="w-6 h-6 text-gold-400" />
@@ -245,6 +247,18 @@ export default function HomePage() {
                 <p className="text-sm font-semibold text-surface-100">Practice Recitation</p>
                 <p className="text-[10px] md:text-xs text-surface-500 mt-0.5 hidden md:block">
                   Improve your Tajweed
+                </p>
+              </div>
+            </div>
+          </Link>
+          */}
+          <Link href="/activity">
+            <div className="aspect-square md:aspect-auto md:p-5 p-3 rounded-2xl bg-gradient-to-br from-gold-900/30 to-surface-900/50 border border-gold-800/20 hover:border-gold-600/40 transition-all flex flex-col items-center md:items-start justify-center md:justify-start gap-2 text-center md:text-left">
+              <Activity className="w-6 h-6 text-gold-400" />
+              <div>
+                <p className="text-sm font-semibold text-surface-100">Activity</p>
+                <p className="text-[10px] md:text-xs text-surface-500 mt-0.5 hidden md:block">
+                  Sessions, recordings &amp; stats
                 </p>
               </div>
             </div>

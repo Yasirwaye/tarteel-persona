@@ -20,6 +20,7 @@ import {
   Star,
   Sun,
   BarChart3,
+  Activity,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -33,12 +34,14 @@ interface SidebarProps {
 
 const navItems = [
   { href: "/surah", icon: BookOpen, label: "Quran", description: "Read & Listen" },
-  { href: "/recitation", icon: Mic, label: "Recitation", description: "Practice & Improve" },
+  // Recitation section disabled for now — recite from the Quran page instead
+  // { href: "/recitation", icon: Mic, label: "Recitation", description: "Practice & Improve" },
   { href: "/memorization", icon: Brain, label: "Memorization", description: "Hifz with spaced repetition" },
   { href: "/tajweed", icon: Sparkles, label: "Tajweed Guide", description: "Recitation rules" },
   { href: "/search", icon: Search, label: "Search", description: "Find anything" },
   { href: "/chat", icon: MessageSquare, label: "AI Chat", description: "Ask about Quran" },
   { href: "/daily", icon: Sun, label: "Daily Verse", description: "Today's reflection" },
+  { href: "/activity", icon: Activity, label: "Activity", description: "Sessions & recordings" },
   { href: "/stats", icon: BarChart3, label: "Stats", description: "Your progress" },
   { href: "/bookmarks", icon: Bookmark, label: "Bookmarks", description: "Saved verses" },
   { href: "/notes", icon: StickyNote, label: "Notes", description: "Your reflections" },

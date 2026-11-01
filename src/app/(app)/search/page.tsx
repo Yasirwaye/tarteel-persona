@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useSessionStore } from "@/stores/sessionStore";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
@@ -111,6 +112,8 @@ export default function SearchPage() {
     (q: string) => {
       if (q.trim().length >= 2) {
         addRecentQuery(q.trim());
+        // Counted on the Activity page (Search Queries)
+        useSessionStore.getState().logSearch();
       }
     },
     [addRecentQuery]

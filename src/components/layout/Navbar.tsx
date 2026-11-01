@@ -28,6 +28,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/daily": { title: "Daily Verse", subtitle: "Today's reflection" },
   "/daily/history": { title: "Reflection History", subtitle: "Your spiritual journal" },
   "/stats": { title: "Stats", subtitle: "Your progress" },
+  "/activity": { title: "Activity", subtitle: "Sessions, recordings & statistics" },
   "/tajweed": { title: "Tajweed Guide", subtitle: "Recitation rules" },
   "/bookmarks": { title: "Bookmarks", subtitle: "Your saved verses" },
   "/notes": { title: "Notes", subtitle: "Your personal reflections" },
