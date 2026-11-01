@@ -23,6 +23,41 @@ import {
 const ADHAN_AUDIO_PATH = "/audio/adhan-short.mp3";
 
 /**
+ * Browsers only let a page start sound that a tap started. One shared adhan
+ * player is "unlocked" by the user's first tap anywhere, so it can then play
+ * at prayer time (and for the test timer) while the page is open. (With the
+ * phone locked only the native apps can play the adhan — as the notification sound.)
+ */
+let webAdhan: HTMLAudioElement | null = null;
+function adhanPlayer(): HTMLAudioElement {
+  if (!webAdhan) {
+    webAdhan = new Audio(ADHAN_AUDIO_PATH);
+    webAdhan.preload = "auto";
+  }
+  return webAdhan;
+}
+function unlockAdhanOnFirstTap() {
+  if (typeof window === "undefined") return;
+  const unlock = () => {
+    const el = adhanPlayer();
+    el.muted = true;
+    el.play()
+      .then(() => {
+        el.pause();
+        el.currentTime = 0;
+      })
+      .catch(() => {})
+      .finally(() => (el.muted = false));
+  };
+  window.addEventListener("pointerdown", unlock, { once: true, capture: true });
+}
+function playWebAdhan(): Promise<void> {
+  const el = adhanPlayer();
+  el.currentTime = 0;
+  return el.play();
+}
+
+/**
  * Hook that wires up prayer notifications.
  * - Native (Android/iOS): uses OS-level scheduled local notifications.
  *   These fire reliably even when app is closed and phone is locked.
@@ -73,8 +108,8 @@ export function usePrayerNotifications() {
 
     // ────────────────────────── WEB PATH (unchanged behaviour) ──────────────────────────
     if (typeof window !== "undefined" && !audioRef.current) {
-      audioRef.current = new Audio(ADHAN_AUDIO_PATH);
-      audioRef.current.preload = "auto";
+      audioRef.current = adhanPlayer();
+      unlockAdhanOnFirstTap();
     }
 
     const scheduleWebNotifications = () => {
@@ -375,7 +410,7 @@ export async function scheduleAdhanTest(at: Date): Promise<boolean> {
       warn("[TestTimer] Notification failed:", err);
     }
     toast.success("Adhan test", { description: "The test timer fired", duration: 10000 });
-    new Audio(ADHAN_AUDIO_PATH).play().catch((err) => {
+    playWebAdhan().catch((err) => {
       warn("[TestTimer] Audio failed:", err);
       toast.warning("The browser blocked the adhan audio", {
         description: "Tap anywhere on the page before the timer fires.",

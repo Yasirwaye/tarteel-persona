@@ -2,15 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { Share, PlusSquare, X } from "lucide-react";
-import { isIOS, isStandalone } from "@/lib/platform";
+import { isIOS, isNative, isStandalone } from "@/lib/platform";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function IOSInstallPrompt() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    // Only show on iOS if NOT already installed/standalone
-    if (isIOS() && !isStandalone()) {
+    // Only in iOS Safari: not once installed to the home screen, nor in the native app
+    if (isIOS() && !isStandalone() && !isNative()) {
       const dismissed = localStorage.getItem("ios-install-dismissed");
       if (!dismissed) {
         setShow(true);
