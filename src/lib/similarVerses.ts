@@ -159,20 +159,79 @@ export function preloadQuranText(): void {
   void loadCorpus();
 }
 
+/** The whole Quran as one word stream, with a 3-word-run index of positions */
+interface Stream {
+  words: string[];
+  verseAt: number[]; // corpus verse index of each word
+  grams: Map<string, number[]>;
+}
+let stream: Promise<Stream> | null = null;
+
+function loadStream(): Promise<Stream> {
+  stream ??= loadCorpus().then((c) => {
+    const words: string[] = [];
+    const verseAt: number[] = [];
+    c.words.forEach((ws, v) =>
+      ws.forEach((w) => {
+        words.push(w);
+        verseAt.push(v);
+      })
+    );
+    const grams = new Map<string, number[]>();
+    for (let i = 0; i + MIN_PHRASE <= words.length; i++) {
+      const g = words.slice(i, i + MIN_PHRASE).join(" ");
+      const list = grams.get(g);
+      if (list) list.push(i);
+      else grams.set(g, [i]);
+    }
+    return { words, verseAt, grams };
+  });
+  return stream;
+}
+
+export interface RecitationPlace {
+  /** The ayah being recited now (of the last word heard) */
+  surahId: number;
+  ayah: number;
+  /** Where the matched run of words began (a repeated verse just before, if any) */
+  fromSurahId: number;
+  fromAyah: number;
+}
+
 /**
- * Which ayah is being recited, from words heard (anywhere in the Quran): the
- * ayah sharing the most 3-word runs with them. Null unless the match is clear
- * (at least 2 runs, and ahead of the runner-up).
+ * Where in the Quran the reciter is, from the words heard (any surah). The
+ * heard words are matched as one continuous run against the whole Quran: each
+ * shared 3-word run votes for the place the heard words would start at.
+ * Repeated verses (Ar-Rahman's refrain, Al-Mursalat's) tie across all their
+ * places, so nothing is returned until the next verse makes the place unique.
  */
-export async function locateRecitation(heard: string): Promise<{ surahId: number; ayah: number } | null> {
+export async function locateRecitation(heard: string): Promise<RecitationPlace | null> {
+  const st = await loadStream();
   const c = await loadCorpus();
-  const words = normalizeArabic(heard).split(" ").filter(Boolean);
-  const hits = new Map<number, number>();
-  for (let i = 0; i + MIN_PHRASE <= words.length; i++) {
-    for (const v of c.grams.get(words.slice(i, i + MIN_PHRASE).join(" ")) ?? []) hits.set(v, (hits.get(v) ?? 0) + 1);
+  const words = normalizeArabic(heard).split(" ").filter(Boolean).slice(-20);
+  const votes = new Map<number, number>();
+  for (let j = 0; j + MIN_PHRASE <= words.length; j++) {
+    for (const pos of st.grams.get(words.slice(j, j + MIN_PHRASE).join(" ")) ?? []) {
+      votes.set(pos - j, (votes.get(pos - j) ?? 0) + 1);
+    }
   }
-  const ranked = [...hits.entries()].sort((a, b) => b[1] - a[1]);
-  const [best, second] = ranked;
-  if (!best || best[1] < 2 || (second && second[1] >= best[1])) return null;
-  return c.refs[best[0]];
+  const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
+  const best = ranked[0];
+  if (!best || best[1] < 2) return null; // fewer than 4 words in a row
+  // Runner-up elsewhere (offsets a few words apart are the same place, shifted by a misheard word)
+  const rival = ranked.find(([off]) => Math.abs(off - best[0]) > 3);
+  if (rival && rival[1] > best[1] - 2) return null; // not yet unique
+  const clamp = (i: number) => Math.min(st.words.length - 1, Math.max(0, i));
+  const firstHit = words.findIndex((_, j) => {
+    const p = best[0] + j;
+    return p >= 0 && st.words[p] === words[j];
+  });
+  const now = c.refs[st.verseAt[clamp(best[0] + words.length - 1)]];
+  const from = c.refs[st.verseAt[clamp(best[0] + Math.max(0, firstHit))]];
+  return { surahId: now.surahId, ayah: now.ayah, fromSurahId: from.surahId, fromAyah: from.ayah };
+}
+
+/** Load the whole-Quran stream ahead of time */
+export function preloadRecitationLocator(): void {
+  void loadStream();
 }

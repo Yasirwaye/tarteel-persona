@@ -32,7 +32,7 @@ import { useLiveRecitation } from "@/hooks/useLiveRecitation";
 import { useReadingSession } from "@/hooks/useReadingSession";
 import { useSessionStore, sessionId, type SessionMistake } from "@/stores/sessionStore";
 import { saveRecording } from "@/lib/recordingsDb";
-import { locateRecitation, preloadQuranText } from "@/lib/similarVerses";
+import { locateRecitation, preloadRecitationLocator } from "@/lib/similarVerses";
 import {
   containsBasmala,
   isOpeningFormulaWord,
@@ -180,6 +180,8 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
     getRecordingWav,
     takeRecording,
     getStartedAt,
+    handOff,
+    liveText,
   } = useLiveRecitation({
     expectedText,
     wordAyahMap,
@@ -208,35 +210,42 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
     return stray.slice(-6);
   }, [stage, spokenSoFar, expectedWords, currentWordIndex, keepBasmala]);
 
-  // Reciting a verse of another surah: open it there and keep reciting. The
-  // latest words heard are looked up in the whole Quran; only a clear best
-  // match outside this surah moves (a verse of this surah matching best stays).
+  // Where in the Quran the reciter is, from the fast lane's live text (≈0.3 s
+  // behind; Whisper's text otherwise). Repeated verses wait for the next verse.
+  // In another surah: hand the running recitation over and open it there (the
+  // mic keeps going); in this one, turn to the verse if nothing is marked yet.
   const relocating = useRef(false);
   useEffect(() => {
     if (stage !== "live" || !isRecording || relocating.current) return;
-    const heard = spokenSoFar
+    const heard = (liveText || spokenSoFar)
       .split(/\s+/)
       .filter((raw) => {
         const w = normalizeRecitationWord(raw);
         return w && !isOpeningFormulaWord(w, keepBasmala);
       })
-      .slice(-15);
-    if (heard.length < 5) return;
+      .slice(-20);
+    if (heard.length < 4) return;
     let cancelled = false;
     locateRecitation(heard.join(" ")).then((found) => {
-      if (cancelled || !found || found.surahId === surah.id || relocating.current) return;
-      relocating.current = true;
+      if (cancelled || !found || relocating.current) return;
       const nav = useMushafNavStore.getState();
+      if (found.surahId === surah.id) {
+        if (words.every((w) => w.status === "pending")) nav.requestJump(surah.id, found.fromAyah);
+        return;
+      }
+      relocating.current = true;
+      const startAyah = found.fromSurahId === found.surahId ? found.fromAyah : found.ayah;
+      handOff();
       nav.setAutoRecite(true);
-      nav.requestJump(found.surahId, found.ayah);
-      toast.info(`Reciting ${surahsMetadataName(found.surahId)} ${found.surahId}:${found.ayah}`);
+      nav.requestJump(found.surahId, startAyah);
+      toast.info(`${surahsMetadataName(found.surahId)} ${found.surahId}:${startAyah}`, { duration: 1500 });
       router.push(`${basePathFor(isReader)}/${found.surahId}`);
     });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spokenSoFar, stage, isRecording]);
+  }, [liveText, spokenSoFar, stage, isRecording]);
   useEffect(() => {
     relocating.current = false;
   }, [surah.id]);
@@ -349,7 +358,7 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
   }, [isRecording, isProcessing, stage, currentWordIndex]);
 
   const handleStartReciting = async () => {
-    preloadQuranText(); // for recognizing a verse from anywhere in the Quran
+    preloadRecitationLocator(); // for recognizing a verse from anywhere in the Quran
     recordedAttemptRef.current = false;
     stoppedRef.current = false;
     setStage("live");

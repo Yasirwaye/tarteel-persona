@@ -54,6 +54,11 @@ export class StreamingRecognizer {
     private lang = "ar-SA"
   ) {}
 
+  /** Send further text elsewhere (a recitation handed over to another surah keeps listening) */
+  setOnText(onText: (text: string) => void): void {
+    this.onText = onText;
+  }
+
   static isSupported(): boolean {
     return getCtor() !== null;
   }

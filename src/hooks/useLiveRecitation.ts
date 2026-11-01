@@ -32,6 +32,8 @@ export interface LiveRecitationState {
   duration: number;
   error: string | null;
   spokenSoFar: string;
+  /** Latest text from the fast lane (≈0.3 s behind the reciter) */
+  liveText: string;
 }
 
 interface UseLiveRecitationOptions {
@@ -66,6 +68,31 @@ const transcribe: Transcriber = async (audio, { quality, final }) => {
   };
 };
 
+/**
+ * A recitation being handed to another surah: the mic, fast lane and audio
+ * copy keep running so the reciter is never interrupted; the next session
+ * (the new surah's) picks them up in startRecording().
+ */
+interface Handoff {
+  rec: PcmRecorder;
+  fast: StreamingRecognizer | null;
+  mediaRecorder: MediaRecorder | null;
+  chunks: Blob[];
+  /** Where the new session starts in the running recording */
+  startAtSample: number;
+  expires: ReturnType<typeof setTimeout>;
+}
+let handoff: Handoff | null = null;
+
+function dropHandoff() {
+  if (!handoff) return;
+  clearTimeout(handoff.expires);
+  handoff.fast?.stop();
+  if (handoff.mediaRecorder?.state === "recording") handoff.mediaRecorder.stop();
+  handoff.rec.stop();
+  handoff = null;
+}
+
 export function useLiveRecitation({
   expectedText,
   wordAyahMap,
@@ -94,6 +121,7 @@ export function useLiveRecitation({
       duration: 0,
       error: null,
       spokenSoFar: "",
+      liveText: "",
     }),
     [buildInitialWords]
   );
@@ -168,18 +196,25 @@ export function useLiveRecitation({
     cleanup();
     setState(initialState());
 
-    const rec = new PcmRecorder({
-      onLevel: (level) => {
-        if (sessionId === sessionIdRef.current) {
-          setState((s) => (Math.abs(s.volumeLevel - level) < 2 ? s : { ...s, volumeLevel: level }));
-        }
-      },
-    });
+    // Continuing a recitation handed over from another surah: reuse its mic
+    const taken = handoff;
+    if (taken) clearTimeout(taken.expires);
+    handoff = null;
+
+    const rec =
+      taken?.rec ??
+      new PcmRecorder({
+        onLevel: (level) => {
+          if (sessionId === sessionIdRef.current) {
+            setState((s) => (Math.abs(s.volumeLevel - level) < 2 ? s : { ...s, volumeLevel: level }));
+          }
+        },
+      });
     recorderRef.current = rec;
     lastRecordingRef.current = rec;
 
     try {
-      await rec.start();
+      if (!taken) await rec.start();
       if (sessionId !== sessionIdRef.current) {
         rec.stop();
         return;
@@ -190,6 +225,7 @@ export function useLiveRecitation({
         .filter((i) => i >= 0);
       const engine = new LiveRecitationEngine(expectedRef.current, allowStartAnywhere, {
         verseStarts,
+        startAtSample: taken?.startAtSample,
         source: rec,
         transcribe,
         onUpdate: (u) => {
@@ -202,14 +238,25 @@ export function useLiveRecitation({
       engineRef.current = engine;
       engine.start();
 
-      if (FAST_LANE_ENABLED && StreamingRecognizer.isSupported()) {
-        const fast = new StreamingRecognizer((text) => {
-          if (sessionId === sessionIdRef.current) engine.hint(text);
-        });
+      const onFastText = (text: string) => {
+        if (sessionId !== sessionIdRef.current) return;
+        engine.hint(text);
+        setState((s) => (s.liveText === text ? s : { ...s, liveText: text }));
+      };
+      if (taken?.fast) {
+        taken.fast.setOnText(onFastText);
+        fastRef.current = taken.fast;
+      } else if (FAST_LANE_ENABLED && StreamingRecognizer.isSupported()) {
+        const fast = new StreamingRecognizer(onFastText);
         if (fast.start(rec.audioTrack ?? undefined)) fastRef.current = fast;
       }
 
-      startRecordingCopy(rec.audioTrack);
+      if (taken?.mediaRecorder) {
+        mediaRecorderRef.current = taken.mediaRecorder;
+        mediaChunksRef.current = taken.chunks;
+      } else {
+        startRecordingCopy(rec.audioTrack);
+      }
       startTimeRef.current = Date.now();
       durationRef.current = setInterval(() => {
         if (sessionId !== sessionIdRef.current) return;
@@ -310,6 +357,36 @@ export function useLiveRecitation({
     };
   }, [cleanup]);
 
+  /**
+   * Hand the running recitation to the next session (another surah opening):
+   * the engine stops, but the mic, fast lane and audio copy keep running.
+   * The next session restarts `rewindSec` back, so the verse that was just
+   * recognized is graded there too.
+   */
+  const handOff = useCallback((rewindSec = 8): boolean => {
+    const rec = recorderRef.current;
+    if (!rec) return false;
+    dropHandoff();
+    handoff = {
+      rec,
+      fast: fastRef.current,
+      mediaRecorder: mediaRecorderRef.current,
+      chunks: mediaChunksRef.current,
+      startAtSample: Math.max(0, rec.sampleCount - rewindSec * 16000),
+      // Not picked up (the reciter went elsewhere): stop everything
+      expires: setTimeout(dropHandoff, 15_000),
+    };
+    recorderRef.current = null;
+    fastRef.current = null;
+    mediaRecorderRef.current = null;
+    sessionIdRef.current++;
+    if (durationRef.current) clearInterval(durationRef.current);
+    durationRef.current = null;
+    engineRef.current?.dispose();
+    engineRef.current = null;
+    return true;
+  }, []);
+
   /** The last session's recording for keeping: compressed when the browser can, else WAV */
   const takeRecording = useCallback((): Blob | null => {
     if (recordingBlobRef.current?.size) return recordingBlobRef.current;
@@ -335,5 +412,6 @@ export function useLiveRecitation({
     getRecordingWav,
     takeRecording,
     getStartedAt,
+    handOff,
   };
 }

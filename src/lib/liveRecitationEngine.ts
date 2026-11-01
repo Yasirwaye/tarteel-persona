@@ -66,6 +66,11 @@ export interface EngineOptions {
   now?: () => number;
   /** Index of the first word of each verse (helps place skipped verses). */
   verseStarts?: number[];
+  /**
+   * Start at this sample of an already-running recording (a recitation handed
+   * over from another surah): earlier audio is not transcribed again.
+   */
+  startAtSample?: number;
 }
 
 export const ENGINE_CONFIG = {
@@ -217,6 +222,10 @@ export class LiveRecitationEngine {
   ) {
     this.tracker = new RecitationTracker(expected, allowStartAnywhere, opts.verseStarts);
     this.now = opts.now ?? (() => Date.now());
+    if (opts.startAtSample) {
+      this.committed = opts.startAtSample;
+      this.lastDispatchTo = opts.startAtSample;
+    }
   }
 
   start(): void {
