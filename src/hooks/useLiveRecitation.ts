@@ -5,8 +5,6 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { apiUrl } from "@/lib/apiBase";
 import { PcmRecorder } from "@/lib/pcmRecorder";
 import { StreamingRecognizer } from "@/lib/streamingRecognizer";
-import { NativeSpeechRecognizer } from "@/lib/nativeSpeech";
-import { isNative } from "@/lib/platform";
 import { loadQuranVocabulary, type WordStatus } from "@/lib/arabicUtils";
 import {
   LiveRecitationEngine,
@@ -106,8 +104,7 @@ export function useLiveRecitation({
   const engineRef = useRef<LiveRecitationEngine | null>(null);
   // Last session's audio, kept for the dev-only "Download recording" button
   const lastRecordingRef = useRef<PcmRecorder | null>(null);
-  // Fast lane: the browser's recognizer, or the phone's own in the installed app
-  const fastRef = useRef<{ stop(): void } | null>(null);
+  const fastRef = useRef<StreamingRecognizer | null>(null);
   // Compressed copy of the session's audio (kept on the device for listening back)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
@@ -205,19 +202,10 @@ export function useLiveRecitation({
       engineRef.current = engine;
       engine.start();
 
-      const hint = (text: string) => {
-        if (sessionId === sessionIdRef.current) engine.hint(text);
-      };
-      if (FAST_LANE_ENABLED && isNative()) {
-        // The app's web view has no Web Speech API: use the phone's recognizer
-        NativeSpeechRecognizer.prepare().then(async (ok) => {
-          if (!ok || sessionId !== sessionIdRef.current) return;
-          const fast = new NativeSpeechRecognizer(hint);
-          fastRef.current = fast;
-          await fast.start().catch(() => {});
+      if (FAST_LANE_ENABLED && StreamingRecognizer.isSupported()) {
+        const fast = new StreamingRecognizer((text) => {
+          if (sessionId === sessionIdRef.current) engine.hint(text);
         });
-      } else if (FAST_LANE_ENABLED && StreamingRecognizer.isSupported()) {
-        const fast = new StreamingRecognizer(hint);
         if (fast.start(rec.audioTrack ?? undefined)) fastRef.current = fast;
       }
 
