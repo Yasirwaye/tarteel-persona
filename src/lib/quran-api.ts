@@ -140,9 +140,28 @@ function stripBismillahPrefix(surahId: number, text: string): string {
 // FETCH FULL SURAH
 // ============================================
 
+// Finished surahs, readable synchronously (a page opening a cached surah renders at once)
+const surahResults = new Map<string, FullAyah[]>();
+
+/** A surah fetched earlier this session, or null */
+export function getCachedSurah(surahId: number, translationId: TranslationId = "en-sahih"): FullAyah[] | null {
+  return surahResults.get(`${surahId}:${translationId}`) ?? null;
+}
+
 export async function fetchSurah(
   surahId: number,
   translationId: TranslationId = "en-sahih"
+): Promise<FullAyah[]> {
+  const done = getCachedSurah(surahId, translationId);
+  if (done) return done;
+  const result = await fetchSurahUncached(surahId, translationId);
+  surahResults.set(`${surahId}:${translationId}`, result);
+  return result;
+}
+
+async function fetchSurahUncached(
+  surahId: number,
+  translationId: TranslationId
 ): Promise<FullAyah[]> {
   const arabicEdition = EDITIONS.arabic.uthmani;
   const translationEdition = EDITIONS.translations[translationId];

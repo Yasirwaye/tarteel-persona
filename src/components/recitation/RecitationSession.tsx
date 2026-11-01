@@ -33,6 +33,9 @@ import { useReadingSession } from "@/hooks/useReadingSession";
 import { useSessionStore, sessionId, type SessionMistake } from "@/stores/sessionStore";
 import { saveRecording } from "@/lib/recordingsDb";
 import { locateRecitation, preloadRecitationLocator } from "@/lib/similarVerses";
+import { fetchSurah } from "@/lib/quran-api";
+import { fetchMadaniPage } from "@/lib/madaniData";
+import { loadPageFont } from "@/lib/madaniFonts";
 import {
   containsBasmala,
   isOpeningFormulaWord,
@@ -80,10 +83,14 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
     const n = Number(url.hash.match(/ayah-(\d+)/)?.[1] ?? url.searchParams.get("ayah"));
     if (n >= 1 && n <= surah.versesCount) setJumpTo({ ayah: n, seq: 0 });
   }, [surah.id, surah.versesCount]);
+  // A jump requested for this surah applies on this very render (no flash of
+  // the first page); the newer of the URL's ayah and the requested jump wins
   const jump = useMushafNavStore((s) => s.jump);
-  useEffect(() => {
-    if (jump?.surahId === surah.id) setJumpTo({ ayah: jump.ayah, seq: jump.seq });
-  }, [jump, surah.id]);
+  const storeJump = useMemo(
+    () => (jump?.surahId === surah.id ? { ayah: jump.ayah, seq: jump.seq } : null),
+    [jump, surah.id]
+  );
+  const effectiveJump = storeJump && (!jumpTo || storeJump.seq >= jumpTo.seq) ? storeJump : jumpTo;
   // A surah opens in the mushaf layout; the layout button switches to the others
   const [viewMode, setViewMode] = useState<ViewMode>("mushaf");
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
@@ -226,7 +233,7 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
       .slice(-20);
     if (heard.length < 4) return;
     let cancelled = false;
-    locateRecitation(heard.join(" ")).then((found) => {
+    locateRecitation(heard.join(" ")).then(async (found) => {
       if (cancelled || !found || relocating.current) return;
       const nav = useMushafNavStore.getState();
       if (found.surahId === surah.id) {
@@ -235,11 +242,19 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
       }
       relocating.current = true;
       const startAyah = found.fromSurahId === found.surahId ? found.fromAyah : found.ayah;
+      // Load the surah, its mushaf page (data + font) and the route first, then
+      // switch: the page appears complete at once, like turning to it
+      const target = `${basePathFor(isReader)}/${found.surahId}`;
+      router.prefetch(target);
+      const ayahsThere = await fetchSurah(found.surahId).catch(() => null);
+      const page = ayahsThere?.find((a) => a.ayahNumber === startAyah)?.page;
+      if (page) await Promise.all([fetchMadaniPage(page), loadPageFont(page)]).catch(() => {});
+      if (useMushafNavStore.getState().autoRecite) return; // another switch already ran
       handOff();
       nav.setAutoRecite(true);
       nav.requestJump(found.surahId, startAyah);
       toast.info(`${surahsMetadataName(found.surahId)} ${found.surahId}:${startAyah}`, { duration: 1500 });
-      router.push(`${basePathFor(isReader)}/${found.surahId}`);
+      router.push(target);
     });
     return () => {
       cancelled = true;
@@ -582,7 +597,7 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
         surahId={surah.id}
         onRetryAyah={stage === "results" ? handleRetryAyah : undefined}
         onMushafPageChange={handleMushafPageChange}
-        jumpTo={jumpTo}
+        jumpTo={effectiveJump}
         onSwipePastEnd={(page) => openMushafPage(page, true)}
         onSwipePastStart={(page) => openMushafPage(page, false)}
         // Room for the floating controls under the page (none when hidden)

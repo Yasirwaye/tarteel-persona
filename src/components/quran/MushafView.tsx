@@ -153,7 +153,12 @@ export default function MushafView({
     return Array.from(set).sort((a, b) => a - b);
   }, [ayahs]);
 
-  const [pageIndex, setPageIndex] = useState(0);
+  // Open straight on the requested verse's page (no flash of the surah's first page)
+  const [pageIndex, setPageIndex] = useState(() => {
+    if (!jumpTo) return 0;
+    const ayah = ayahs.find((a) => a.ayahNumber === jumpTo.ayah);
+    return Math.max(0, ayah ? pageNumbers.indexOf(ayah.page) : 0);
+  });
   const goToPage = useCallback((index: number) => setPageIndex(index), []);
   const { currentSurahId, currentAyahNumber } = useAudioStore();
   const mushafTheme = useSettingsStore((s) => s.mushafTheme);
