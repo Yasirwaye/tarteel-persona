@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import type { SurahMeta } from "@/data/quran/metadata/surahs";
+import { surahsMetadata, type SurahMeta } from "@/data/quran/metadata/surahs";
 import { PAGE_STARTS } from "@/data/quran/metadata/pages";
 import type { MushafPageInfo } from "@/components/quran/MushafView";
 import { useMushafNavStore } from "@/stores/mushafNavStore";
@@ -32,6 +32,13 @@ import { useLiveRecitation } from "@/hooks/useLiveRecitation";
 import { useReadingSession } from "@/hooks/useReadingSession";
 import { useSessionStore, sessionId, type SessionMistake } from "@/stores/sessionStore";
 import { saveRecording } from "@/lib/recordingsDb";
+import { locateRecitation, preloadQuranText } from "@/lib/similarVerses";
+import {
+  containsBasmala,
+  isOpeningFormulaWord,
+  normalizeRecitationWord,
+  wordsMatch,
+} from "@/lib/arabicUtils";
 import { useRecitationStore } from "@/stores/recitationStore";
 import { useAudioStore } from "@/stores/audioStore";
 import { scoreRecitation, splitQuranWords } from "@/lib/arabicUtils";
@@ -185,6 +192,63 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
   const navPage = useMushafNavStore((st) => (st.position?.surahId === surah.id ? st.position.page : null));
   useReadingSession(surah.id, ayahs, viewMode === "mushaf" ? navPage : null, stage === "live");
 
+  // Words heard that are not in the passage near the reciter's place: shown as
+  // Arabic text between ✨ and the mic (correct words are just marked)
+  const keepBasmala = useMemo(() => containsBasmala(expectedWords), [expectedWords]);
+  const strayWords = useMemo(() => {
+    if (stage !== "live" || !spokenSoFar) return [] as string[];
+    const near = expectedWords.slice(Math.max(0, currentWordIndex - 20), currentWordIndex + 20);
+    const stray: string[] = [];
+    for (const raw of spokenSoFar.split(/\s+/).filter(Boolean).slice(-12).reverse()) {
+      const w = normalizeRecitationWord(raw);
+      if (!w || isOpeningFormulaWord(w, keepBasmala)) continue;
+      if (near.some((e) => wordsMatch(e, w))) break; // back on the verse
+      stray.unshift(raw);
+    }
+    return stray.slice(-6);
+  }, [stage, spokenSoFar, expectedWords, currentWordIndex, keepBasmala]);
+
+  // Reciting a verse of another surah: open it there and keep reciting. The
+  // latest words heard are looked up in the whole Quran; only a clear best
+  // match outside this surah moves (a verse of this surah matching best stays).
+  const relocating = useRef(false);
+  useEffect(() => {
+    if (stage !== "live" || !isRecording || relocating.current) return;
+    const heard = spokenSoFar
+      .split(/\s+/)
+      .filter((raw) => {
+        const w = normalizeRecitationWord(raw);
+        return w && !isOpeningFormulaWord(w, keepBasmala);
+      })
+      .slice(-15);
+    if (heard.length < 5) return;
+    let cancelled = false;
+    locateRecitation(heard.join(" ")).then((found) => {
+      if (cancelled || !found || found.surahId === surah.id || relocating.current) return;
+      relocating.current = true;
+      const nav = useMushafNavStore.getState();
+      nav.setAutoRecite(true);
+      nav.requestJump(found.surahId, found.ayah);
+      toast.info(`Reciting ${surahsMetadataName(found.surahId)} ${found.surahId}:${found.ayah}`);
+      router.push(`${basePathFor(isReader)}/${found.surahId}`);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spokenSoFar, stage, isRecording]);
+  useEffect(() => {
+    relocating.current = false;
+  }, [surah.id]);
+
+  // Opened because the reciter moved here from another surah: start reciting again
+  useEffect(() => {
+    if (ayahsLoading || !ayahs.length || !useMushafNavStore.getState().autoRecite) return;
+    useMushafNavStore.getState().setAutoRecite(false);
+    void handleStartReciting();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ayahsLoading, ayahs.length, surah.id]);
+
   // The Quran's own spelling of each expected word (for the mistakes list)
   const displayWords = useMemo(
     () => activeAyahs.flatMap((a) => splitQuranWords(a.textUthmani).map((t) => t.display)),
@@ -285,6 +349,7 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
   }, [isRecording, isProcessing, stage, currentWordIndex]);
 
   const handleStartReciting = async () => {
+    preloadQuranText(); // for recognizing a verse from anywhere in the Quran
     recordedAttemptRef.current = false;
     stoppedRef.current = false;
     setStage("live");
@@ -594,7 +659,7 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
         <div className="max-w-2xl mx-auto flex items-end justify-between gap-3">
           <div
             className={cn(
-              "flex items-center gap-2 transition-opacity",
+              "flex-1 min-w-0 flex items-center gap-2 transition-opacity",
               reciteMenuOpen ? "opacity-40" : "pointer-events-auto"
             )}
           >
@@ -661,7 +726,7 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
               {hideArabic ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
 
-            {hasKeyMessages(surah.id) && stage !== "live" && (
+            {hasKeyMessages(surah.id) && (
               <button
                 onClick={() => setInsightsOpen(true)}
                 className="w-12 h-12 rounded-full glass border border-white/[0.08] shadow-xl flex items-center justify-center text-gold-400 hover:text-gold-300 transition-all"
@@ -687,6 +752,17 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
                     </span>
                   </>
                 )}
+              </div>
+            )}
+
+            {strayWords.length > 0 && (
+              <div
+                dir="rtl"
+                className="min-w-0 flex-1 h-12 px-4 flex items-center rounded-full glass border border-amber-500/30 shadow-xl font-arabic text-lg text-amber-100 truncate"
+                aria-label="Heard, not in this verse"
+                title="Heard, not in this verse"
+              >
+                <span className="truncate">{strayWords.join(" ")}</span>
               </div>
             )}
 
@@ -771,4 +847,12 @@ function ResultsCard({ accuracy }: { accuracy: number }) {
       <p className="text-xs text-surface-400">{message}</p>
     </div>
   );
+}
+
+function surahsMetadataName(id: number): string {
+  return surahsMetadata[id - 1]?.name ?? `Surah ${id}`;
+}
+
+function basePathFor(isReader: boolean): string {
+  return isReader ? "/surah" : "/recitation";
 }

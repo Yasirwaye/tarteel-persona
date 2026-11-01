@@ -153,3 +153,26 @@ export async function getVerseText(surahId: number, ayah: number): Promise<strin
   const c = await loadCorpus();
   return c.text[c.indexOf(surahId, ayah)] ?? "";
 }
+
+/** Preload the Quran text (e.g. when reciting starts) so a lookup is instant */
+export function preloadQuranText(): void {
+  void loadCorpus();
+}
+
+/**
+ * Which ayah is being recited, from words heard (anywhere in the Quran): the
+ * ayah sharing the most 3-word runs with them. Null unless the match is clear
+ * (at least 2 runs, and ahead of the runner-up).
+ */
+export async function locateRecitation(heard: string): Promise<{ surahId: number; ayah: number } | null> {
+  const c = await loadCorpus();
+  const words = normalizeArabic(heard).split(" ").filter(Boolean);
+  const hits = new Map<number, number>();
+  for (let i = 0; i + MIN_PHRASE <= words.length; i++) {
+    for (const v of c.grams.get(words.slice(i, i + MIN_PHRASE).join(" ")) ?? []) hits.set(v, (hits.get(v) ?? 0) + 1);
+  }
+  const ranked = [...hits.entries()].sort((a, b) => b[1] - a[1]);
+  const [best, second] = ranked;
+  if (!best || best[1] < 2 || (second && second[1] >= best[1])) return null;
+  return c.refs[best[0]];
+}

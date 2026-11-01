@@ -12,6 +12,8 @@ import {
   recitationDistance,
   scoreRecitation,
   tokenizeRecitation,
+  removeOpeningFormulas,
+  containsBasmala,
   type AlignedStatus,
 } from "@/lib/arabicUtils";
 
@@ -86,12 +88,21 @@ export class RecitationTracker {
    * @param verseStarts indices of the first word of each verse (optional):
    *   lets a skip be placed on whole verses when the words can't tell where.
    */
+  /** The passage itself contains the basmala (Al-Fatihah, An-Naml 27:30): grade it */
+  private keepBasmala = false;
+
+  /** Heard words, without the isti'adha / basmala said before reciting */
+  private heard(transcript: string): string[] {
+    return removeOpeningFormulas(tokenizeRecitation(transcript), this.keepBasmala);
+  }
+
   constructor(
     private expected: string[],
     private allowStartAnywhere = false,
     verseStarts?: number[]
   ) {
     this.verseStarts = verseStarts?.length ? new Set(verseStarts) : null;
+    this.keepBasmala = containsBasmala(expected);
     this.last = {
       words: expected.map(() => ({ status: null, spoken: "" })),
       cursor: 0,
@@ -113,7 +124,7 @@ export class RecitationTracker {
     const final = mode !== "live";
     const expected = this.expected;
     const N = expected.length;
-    const spoken = tokenizeRecitation(transcript);
+    const spoken = this.heard(transcript);
     if (mode === "end") stripClosingFormula(spoken);
     const base = this.frozenCursor;
     const freeStart = this.allowStartAnywhere && !this.anchored;
@@ -407,7 +418,7 @@ export class RecitationTracker {
    * marks a mistake itself — only Whisper does, after its own second opinion.
    */
   hint(transcript: string): TrackerSnapshot {
-    const spoken = tokenizeRecitation(transcript).slice(-HINT_TAIL_WORDS);
+    const spoken = this.heard(transcript).slice(-HINT_TAIL_WORDS);
     if (spoken.length === 0) return this.last;
     const N = this.expected.length;
     const at = Math.max(this.frozenCursor, this.hintCursor);
@@ -450,7 +461,7 @@ export class RecitationTracker {
     const off = Math.max(0, Math.min(...flagged) - 30);
     const end = Math.min(this.frozenCursor, Math.max(...flagged) + 30);
     if (end <= off) return this.last;
-    const spoken = tokenizeRecitation(transcript);
+    const spoken = this.heard(transcript);
     const a = alignTokens(this.expected.slice(off, end), spoken, { lookback: end - off });
     const heardHere = (abs: number) => a.expected[abs - off]?.status === "correct";
     const ups: number[] = [];

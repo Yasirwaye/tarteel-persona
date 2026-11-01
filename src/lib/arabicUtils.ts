@@ -188,6 +188,70 @@ export function tokenizeRecitation(text: string): string[] {
     .filter((w) => w.length > 0);
 }
 
+// What reciters say before reciting: not part of the verses being graded
+const ISTIADHA = tokenizeRecitation("أعوذ بالله من الشيطان الرجيم");
+const BASMALA = tokenizeRecitation("بسم الله الرحمن الرحيم");
+
+/** Where `formula` starts in `tokens` (one word may be misheard or missing), and how many tokens it covers */
+function findFormula(tokens: string[], formula: string[], from: number): { start: number; end: number } | null {
+  for (let i = from; i < tokens.length; i++) {
+    if (!wordsMatch(formula[0], tokens[i]) && !(formula[1] && wordsMatch(formula[1], tokens[i]))) continue;
+    let j = 0;
+    let k = i;
+    let matched = 0;
+    while (j < formula.length && k < tokens.length) {
+      if (wordsMatch(formula[j], tokens[k])) {
+        matched++;
+        j++;
+        k++;
+      } else if (k + 1 < tokens.length && wordsMatch(formula[j], tokens[k + 1])) {
+        k++; // an extra (misheard) token
+      } else {
+        j++; // a word Whisper dropped
+      }
+    }
+    if (matched >= Math.max(3, formula.length - 1)) return { start: i, end: k };
+  }
+  return null;
+}
+
+/** A word of the isti'adha or basmala (normalized) */
+export function isOpeningFormulaWord(word: string, keepBasmala: boolean): boolean {
+  const words = keepBasmala ? ISTIADHA : [...ISTIADHA, ...BASMALA];
+  // Also a fragment still being spoken ("بس" of "بسم")
+  return words.some((f) => f === word || (word.length >= 2 && f.startsWith(word)));
+}
+
+/** Whether a normalized passage itself contains the basmala (Al-Fatihah 1:1, An-Naml 27:30) */
+export function containsBasmala(expected: string[]): boolean {
+  return findFormula(expected, BASMALA, 0) !== null;
+}
+
+/**
+ * Drop the isti'adha and the basmala a reciter says before reciting, so they
+ * are neither graded nor matched to verses (the basmala's words also occur
+ * in verses). The basmala is kept where the passage itself contains it.
+ */
+export function removeOpeningFormulas(tokens: string[], keepBasmala: boolean): string[] {
+  let out = tokens;
+  for (const formula of keepBasmala ? [ISTIADHA] : [ISTIADHA, BASMALA]) {
+    let from = 0;
+    for (let hit = findFormula(out, formula, from); hit; hit = findFormula(out, formula, from)) {
+      out = [...out.slice(0, hit.start), ...out.slice(hit.end)];
+      from = hit.start;
+    }
+    // Live text ends mid-formula ("بسم الله" before "الرحمن الرحيم" arrives): hold it back
+    for (let k = Math.min(formula.length - 1, out.length); k >= 1; k--) {
+      const tail = out.slice(-k);
+      if (tail.every((w, i) => wordsMatch(formula[i], w))) {
+        out = out.slice(0, -k);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Word list for a passage, in the same order and count the views render.
  */

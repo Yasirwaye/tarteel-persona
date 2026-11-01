@@ -20,6 +20,9 @@ interface MushafNavState {
   chromeHidden: boolean;
   /** Ayah chosen by press-and-hold (its menu is open; shown in the surah box) */
   selectedAyah: { surahId: number; ayah: number } | null;
+  /** The reciter moved to another surah: start reciting again once it opens */
+  autoRecite: boolean;
+  setAutoRecite: (v: boolean) => void;
   setPosition: (position: MushafPosition | null) => void;
   requestJump: (surahId: number, ayah: number) => void;
   setChromeHidden: (hidden: boolean) => void;
@@ -31,6 +34,8 @@ export const useMushafNavStore = create<MushafNavState>()((set) => ({
   jump: null,
   chromeHidden: false,
   selectedAyah: null,
+  autoRecite: false,
+  setAutoRecite: (autoRecite) => set({ autoRecite }),
   setPosition: (position) => set({ position }),
   requestJump: (surahId, ayah) => set({ jump: { surahId, ayah, seq: Date.now() } }),
   setChromeHidden: (chromeHidden) => set({ chromeHidden }),
