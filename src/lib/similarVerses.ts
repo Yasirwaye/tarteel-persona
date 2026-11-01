@@ -217,7 +217,15 @@ export async function locateRecitation(heard: string): Promise<RecitationPlace |
   }
   const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
   const best = ranked[0];
-  if (!best || best[1] < 2) return null; // fewer than 4 words in a row
+  if (!best) return null;
+  if (best[1] < 2) {
+    // 3 words in a row are enough when they are the latest heard and occur
+    // nowhere else in the Quran (إنما الصدقات للفقراء), and long enough that a
+    // misheard word is unlikely to make another verse's phrase
+    const last = words.slice(-MIN_PHRASE);
+    const hits = st.grams.get(last.join(" ")) ?? [];
+    if (ranked.length > 1 || hits.length !== 1 || last.join("").length < 12) return null;
+  }
   // Runner-up elsewhere (offsets a few words apart are the same place, shifted by a misheard word)
   const rival = ranked.find(([off]) => Math.abs(off - best[0]) > 3);
   if (rival && rival[1] > best[1] - 2) return null; // not yet unique

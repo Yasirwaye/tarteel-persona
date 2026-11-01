@@ -71,6 +71,8 @@ export interface EngineOptions {
    * over from another surah): earlier audio is not transcribed again.
    */
   startAtSample?: number;
+  /** The reciter is known to be at this word (the verse recognized before switching) */
+  startWord?: number;
 }
 
 export const ENGINE_CONFIG = {
@@ -222,6 +224,7 @@ export class LiveRecitationEngine {
   ) {
     this.tracker = new RecitationTracker(expected, allowStartAnywhere, opts.verseStarts);
     this.now = opts.now ?? (() => Date.now());
+    if (opts.startWord) this.tracker.startFrom(opts.startWord);
     if (opts.startAtSample) {
       this.committed = opts.startAtSample;
       this.lastDispatchTo = opts.startAtSample;

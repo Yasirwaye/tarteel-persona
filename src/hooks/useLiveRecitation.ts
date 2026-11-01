@@ -80,6 +80,8 @@ interface Handoff {
   chunks: Blob[];
   /** Where the new session starts in the running recording */
   startAtSample: number;
+  /** Where the reciter is: the verse recognized before switching */
+  at?: { surahId: number; ayah: number };
   expires: ReturnType<typeof setTimeout>;
 }
 let handoff: Handoff | null = null;
@@ -226,6 +228,9 @@ export function useLiveRecitation({
       const engine = new LiveRecitationEngine(expectedRef.current, allowStartAnywhere, {
         verseStarts,
         startAtSample: taken?.startAtSample,
+        startWord: taken?.at
+          ? Math.max(0, map.findIndex((w) => w.surahId === taken.at!.surahId && w.ayahNumber === taken.at!.ayah))
+          : undefined,
         source: rec,
         transcribe,
         onUpdate: (u) => {
@@ -363,7 +368,7 @@ export function useLiveRecitation({
    * The next session restarts `rewindSec` back, so the verse that was just
    * recognized is graded there too.
    */
-  const handOff = useCallback((rewindSec = 8): boolean => {
+  const handOff = useCallback((at?: { surahId: number; ayah: number }, rewindSec = 20): boolean => {
     const rec = recorderRef.current;
     if (!rec) return false;
     dropHandoff();
@@ -373,6 +378,7 @@ export function useLiveRecitation({
       mediaRecorder: mediaRecorderRef.current,
       chunks: mediaChunksRef.current,
       startAtSample: Math.max(0, rec.sampleCount - rewindSec * 16000),
+      at,
       // Not picked up (the reciter went elsewhere): stop everything
       expires: setTimeout(dropHandoff, 15_000),
     };

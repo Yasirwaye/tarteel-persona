@@ -231,7 +231,7 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
         return w && !isOpeningFormulaWord(w, keepBasmala);
       })
       .slice(-20);
-    if (heard.length < 4) return;
+    if (heard.length < 3) return;
     let cancelled = false;
     locateRecitation(heard.join(" ")).then(async (found) => {
       if (cancelled || !found || relocating.current) return;
@@ -250,7 +250,7 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
       const page = ayahsThere?.find((a) => a.ayahNumber === startAyah)?.page;
       if (page) await Promise.all([fetchMadaniPage(page), loadPageFont(page)]).catch(() => {});
       if (useMushafNavStore.getState().autoRecite) return; // another switch already ran
-      handOff();
+      handOff({ surahId: found.surahId, ayah: startAyah });
       nav.setAutoRecite(true);
       nav.requestJump(found.surahId, startAyah);
       toast.info(`${surahsMetadataName(found.surahId)} ${found.surahId}:${startAyah}`, { duration: 1500 });
@@ -264,14 +264,6 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
   useEffect(() => {
     relocating.current = false;
   }, [surah.id]);
-
-  // Opened because the reciter moved here from another surah: start reciting again
-  useEffect(() => {
-    if (ayahsLoading || !ayahs.length || !useMushafNavStore.getState().autoRecite) return;
-    useMushafNavStore.getState().setAutoRecite(false);
-    void handleStartReciting();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ayahsLoading, ayahs.length, surah.id]);
 
   // The Quran's own spelling of each expected word (for the mistakes list)
   const displayWords = useMemo(
@@ -290,6 +282,21 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
     recordedAttemptRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surah.id]);
+
+  // Opened because the reciter moved here from another surah: start reciting
+  // again. A tick later and only if still mounted: with the surah preloaded this
+  // runs on mount, and a mount that is immediately undone (React dev) would
+  // otherwise stop the handed-over mic.
+  useEffect(() => {
+    if (ayahsLoading || !ayahs.length || !useMushafNavStore.getState().autoRecite) return;
+    const t = setTimeout(() => {
+      if (!useMushafNavStore.getState().autoRecite) return;
+      useMushafNavStore.getState().setAutoRecite(false);
+      void handleStartReciting();
+    }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ayahsLoading, ayahs.length, surah.id]);
 
   // After processing finishes, record the attempt and move to results
   useEffect(() => {

@@ -112,6 +112,18 @@ export class RecitationTracker {
     };
   }
 
+  /**
+   * The reciter is known to be at word `k` (a verse recognized before this
+   * passage opened): look for them from there. Earlier words stay unread,
+   * not skipped.
+   */
+  startFrom(k: number): void {
+    if (k <= 0 || k >= this.expected.length) return;
+    this.frozen = Array.from({ length: k }, () => ({ status: null, spoken: "" }));
+    this.frozenCursor = k;
+    this.hintCursor = k;
+  }
+
   get snapshot(): TrackerSnapshot {
     return this.last;
   }
