@@ -224,16 +224,23 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
   const relocating = useRef(false);
   useEffect(() => {
     if (stage !== "live" || !isRecording || relocating.current) return;
-    const heard = (liveText || spokenSoFar)
-      .split(/\s+/)
-      .filter((raw) => {
-        const w = normalizeRecitationWord(raw);
-        return w && !isOpeningFormulaWord(w, keepBasmala);
-      })
-      .slice(-20);
-    if (heard.length < 3) return;
+    // Both the fast lane's text and Whisper's: a phone's recognizer may hear
+    // recitation poorly, and its text must not hide Whisper's
+    const texts = [liveText, spokenSoFar]
+      .map((t) =>
+        t
+          .split(/\s+/)
+          .filter((raw) => {
+            const w = normalizeRecitationWord(raw);
+            return w && !isOpeningFormulaWord(w, keepBasmala);
+          })
+          .slice(-20)
+      )
+      .filter((heard) => heard.length >= 3);
+    if (!texts.length) return;
     let cancelled = false;
-    locateRecitation(heard.join(" ")).then(async (found) => {
+    Promise.all(texts.map((heard) => locateRecitation(heard.join(" ")))).then(async (places) => {
+      const found = places.find(Boolean) ?? null;
       if (cancelled || !found || relocating.current) return;
       const nav = useMushafNavStore.getState();
       if (found.surahId === surah.id) {

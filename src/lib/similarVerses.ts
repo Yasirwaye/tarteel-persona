@@ -3,7 +3,7 @@
 // share runs of 3+ consecutive words with the chosen ayah (word-level, after
 // normalizeArabic). The Quran text loads lazily on first use.
 
-import { normalizeArabic } from "@/lib/arabicUtils";
+import { normalizeArabic, normalizeRecitationWord } from "@/lib/arabicUtils";
 import { surahsMetadata } from "@/data/quran/metadata/surahs";
 
 /** Shortest shared run of words that counts as a phrase */
@@ -161,19 +161,40 @@ export function preloadQuranText(): void {
 
 /** The whole Quran as one word stream, with a 3-word-run index of positions */
 interface Stream {
+  key: (word: string) => string;
   words: string[];
   verseAt: number[]; // corpus verse index of each word
   grams: Map<string, number[]>;
+  /** 2-word-run index, built on first use (loose keys only) */
+  pairs?: Map<string, number[]>;
+  /** Shortest 3 words (in key letters) that may decide a place on their own (loose keys: never) */
+  minLetters: number;
 }
-let stream: Promise<Stream> | null = null;
 
-function loadStream(): Promise<Stream> {
-  stream ??= loadCorpus().then((c) => {
+/**
+ * A word's loose key for finding the place: the parts Whisper most often gets
+ * wrong or spells differently drop out — "ال" and a leading و/ف (سماء ↔
+ * السماء, وله ↔ ولقد's و), and every alif (السموت ↔ السماوات).
+ */
+function looseKey(word: string): string {
+  let w = normalizeRecitationWord(word);
+  if (w.length > 3 && (w[0] === "و" || w[0] === "ف")) w = w.slice(1);
+  if (w.length > 3 && w.startsWith("ال")) w = w.slice(2);
+  return w.replace(/ا/g, "") || w;
+}
+
+// Exact spelling decides first; the loose keys only when it can't (a misheard
+// ال or و, a modern spelling), so they never make a clear phrase ambiguous
+const streams: Record<"exact" | "loose", Promise<Stream> | null> = { exact: null, loose: null };
+
+function loadStream(kind: "exact" | "loose"): Promise<Stream> {
+  streams[kind] ??= loadCorpus().then((c) => {
+    const key = kind === "exact" ? normalizeRecitationWord : looseKey;
     const words: string[] = [];
     const verseAt: number[] = [];
-    c.words.forEach((ws, v) =>
+    c.display.forEach((ws, v) =>
       ws.forEach((w) => {
-        words.push(w);
+        words.push(key(w));
         verseAt.push(v);
       })
     );
@@ -184,9 +205,9 @@ function loadStream(): Promise<Stream> {
       if (list) list.push(i);
       else grams.set(g, [i]);
     }
-    return { words, verseAt, grams };
+    return { key, words, verseAt, grams, minLetters: kind === "exact" ? 12 : Infinity };
   });
-  return stream;
+  return streams[kind]!;
 }
 
 export interface RecitationPlace {
@@ -206,9 +227,65 @@ export interface RecitationPlace {
  * places, so nothing is returned until the next verse makes the place unique.
  */
 export async function locateRecitation(heard: string): Promise<RecitationPlace | null> {
-  const st = await loadStream();
   const c = await loadCorpus();
-  const words = normalizeArabic(heard).split(" ").filter(Boolean).slice(-20);
+  for (const kind of ["exact", "loose"] as const) {
+    const st = await loadStream(kind);
+    const words = heard.split(/\s+/).map(st.key).filter(Boolean).slice(-20);
+    const at = placeIn(st, words) ?? (kind === "loose" ? placeByPairs(st, words) : null);
+    if (!at) continue;
+    const now = c.refs[st.verseAt[at.now]];
+    const from = c.refs[st.verseAt[at.from]];
+    return { surahId: now.surahId, ayah: now.ayah, fromSurahId: from.surahId, fromAyah: from.ayah };
+  }
+  return null;
+}
+
+/**
+ * Last resort for a reciter Whisper mishears often (الطيل for الطير): word
+ * pairs instead of triples, so one wrong word breaks less. Pairs a word apart
+ * count for the same place (a word misheard as two, or dropped), and only
+ * several pairs agreeing there, and nowhere else, decide.
+ */
+function placeByPairs(st: Stream, words: string[]): { now: number; from: number } | null {
+  if (words.length < 5) return null;
+  st.pairs ??= (() => {
+    const m = new Map<string, number[]>();
+    for (let i = 0; i + 1 < st.words.length; i++) {
+      const g = st.words[i] + " " + st.words[i + 1];
+      const list = m.get(g);
+      if (list) list.push(i);
+      else m.set(g, [i]);
+    }
+    return m;
+  })();
+  const votes = new Map<number, Set<number>>(); // place → which heard pairs agree
+  for (let j = 0; j + 1 < words.length; j++) {
+    const hits = st.pairs.get(words[j] + " " + words[j + 1]) ?? [];
+    if (hits.length > 5) continue; // too common to say anything (في ذلك, a refrain)
+    for (const pos of hits) {
+      const set = votes.get(pos - j) ?? new Set<number>();
+      set.add(j);
+      votes.set(pos - j, set);
+    }
+  }
+  // A place's support: agreeing pairs at its offset or one word either side
+  const support = (off: number) => {
+    const all = new Set<number>();
+    for (const d of [-1, 0, 1]) votes.get(off + d)?.forEach((j) => all.add(j));
+    return all.size;
+  };
+  const ranked = [...votes.keys()].map((off) => [off, support(off)] as const).sort((a, b) => b[1] - a[1]);
+  const best = ranked[0];
+  if (!best || best[1] < 3) return null;
+  const rival = ranked.find(([off]) => Math.abs(off - best[0]) > 3);
+  if (rival && rival[1] > best[1] - 2) return null;
+  const clamp = (i: number) => Math.min(st.words.length - 1, Math.max(0, i));
+  const first = Math.min(...[-1, 0, 1].flatMap((d) => [...(votes.get(best[0] + d) ?? [])]));
+  return { now: clamp(best[0] + words.length - 1), from: clamp(best[0] + first) };
+}
+
+/** Stream positions of the last heard word and the first matched one, when the place is unique */
+function placeIn(st: Stream, words: string[]): { now: number; from: number } | null {
   const votes = new Map<number, number>();
   for (let j = 0; j + MIN_PHRASE <= words.length; j++) {
     for (const pos of st.grams.get(words.slice(j, j + MIN_PHRASE).join(" ")) ?? []) {
@@ -224,22 +301,28 @@ export async function locateRecitation(heard: string): Promise<RecitationPlace |
     // misheard word is unlikely to make another verse's phrase
     const last = words.slice(-MIN_PHRASE);
     const hits = st.grams.get(last.join(" ")) ?? [];
-    if (ranked.length > 1 || hits.length !== 1 || last.join("").length < 12) return null;
+    if (ranked.length > 1 || hits.length !== 1 || last.join("").length < st.minLetters) return null;
   }
   // Runner-up elsewhere (offsets a few words apart are the same place, shifted by a misheard word)
   const rival = ranked.find(([off]) => Math.abs(off - best[0]) > 3);
-  if (rival && rival[1] > best[1] - 2) return null; // not yet unique
+  if (rival && rival[1] > best[1] - 2) {
+    // Not yet unique, unless the latest words are only here: the rival shared
+    // an earlier phrase (زينا السماء الدنيا بمصابيح is in 41:12 and 67:5;
+    // وجعلناها only in 67:5). A refrain's latest words are in every place.
+    const j = words.length - MIN_PHRASE;
+    const latest = st.grams.get(words.slice(j).join(" ")) ?? [];
+    if (best[1] < 2 || latest.length !== 1 || latest[0] - j !== best[0]) return null;
+  }
   const clamp = (i: number) => Math.min(st.words.length - 1, Math.max(0, i));
   const firstHit = words.findIndex((_, j) => {
     const p = best[0] + j;
     return p >= 0 && st.words[p] === words[j];
   });
-  const now = c.refs[st.verseAt[clamp(best[0] + words.length - 1)]];
-  const from = c.refs[st.verseAt[clamp(best[0] + Math.max(0, firstHit))]];
-  return { surahId: now.surahId, ayah: now.ayah, fromSurahId: from.surahId, fromAyah: from.ayah };
+  return { now: clamp(best[0] + words.length - 1), from: clamp(best[0] + Math.max(0, firstHit)) };
 }
 
 /** Load the whole-Quran stream ahead of time */
 export function preloadRecitationLocator(): void {
-  void loadStream();
+  void loadStream("exact");
+  void loadStream("loose");
 }
