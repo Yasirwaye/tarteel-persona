@@ -217,6 +217,8 @@ export interface RecitationPlace {
   /** Where the matched run of words began (a repeated verse just before, if any) */
   fromSurahId: number;
   fromAyah: number;
+  /** How many words in a row the place explains */
+  span: number;
 }
 
 /**
@@ -235,7 +237,7 @@ export async function locateRecitation(heard: string): Promise<RecitationPlace |
     if (!at) continue;
     const now = c.refs[st.verseAt[at.now]];
     const from = c.refs[st.verseAt[at.from]];
-    return { surahId: now.surahId, ayah: now.ayah, fromSurahId: from.surahId, fromAyah: from.ayah };
+    return { surahId: now.surahId, ayah: now.ayah, fromSurahId: from.surahId, fromAyah: from.ayah, span: at.now - at.from + 1 };
   }
   return null;
 }
@@ -280,8 +282,10 @@ function placeByPairs(st: Stream, words: string[]): { now: number; from: number 
   const rival = ranked.find(([off]) => Math.abs(off - best[0]) > 3);
   if (rival && rival[1] > best[1] - 2) return null;
   const clamp = (i: number) => Math.min(st.words.length - 1, Math.max(0, i));
-  const first = Math.min(...[-1, 0, 1].flatMap((d) => [...(votes.get(best[0] + d) ?? [])]));
-  return { now: clamp(best[0] + words.length - 1), from: clamp(best[0] + first) };
+  const agreeing = [-1, 0, 1].flatMap((d) => [...(votes.get(best[0] + d) ?? [])]);
+  // Where the matched words are, not where the heard ones would reach: a
+  // reciter repeating the last verses is not past the end of the surah
+  return { now: clamp(best[0] + Math.max(...agreeing) + 1), from: clamp(best[0] + Math.min(...agreeing)) };
 }
 
 /** Stream positions of the last heard word and the first matched one, when the place is unique */
@@ -314,11 +318,13 @@ function placeIn(st: Stream, words: string[]): { now: number; from: number } | n
     if (best[1] < 2 || latest.length !== 1 || latest[0] - j !== best[0]) return null;
   }
   const clamp = (i: number) => Math.min(st.words.length - 1, Math.max(0, i));
-  const firstHit = words.findIndex((_, j) => {
-    const p = best[0] + j;
-    return p >= 0 && st.words[p] === words[j];
-  });
-  return { now: clamp(best[0] + words.length - 1), from: clamp(best[0] + Math.max(0, firstHit)) };
+  const hit = (j: number) => best[0] + j >= 0 && st.words[best[0] + j] === words[j];
+  const firstHit = words.findIndex((_, j) => hit(j));
+  // The last word that matched here, not where the heard words would reach: a
+  // reciter repeating the last verses is not past the end of the surah
+  let lastHit = words.length - 1;
+  while (lastHit > 0 && !hit(lastHit)) lastHit--;
+  return { now: clamp(best[0] + lastHit), from: clamp(best[0] + Math.max(0, firstHit)) };
 }
 
 /** Load the whole-Quran stream ahead of time */

@@ -22,3 +22,5 @@ node_modules/
 
 # Recordings saved with the dev-only "Download recording" button
 recitation-*.wav
+recitation-*.webm
+recitation-*.m4a

@@ -285,7 +285,7 @@ for (const g of SIMILAR_GROUPS) {
  * transcribed word is not a Quran word at all — see matchDistance.
  */
 const SOUND_ALIKE_GROUPS = [
-  "طضظتد", "قخغك", "سصثز", "حعهخ", "ذدزظ", "ثت", "رل", "نم", "بم", "عا",
+  "طضظتد", "قخغك", "سصثز", "حعهخ", "ذدزظ", "ثت", "رل", "نم", "بم", "مل", "عاه",
 ];
 const SOUND_ALIKE = new Set<string>();
 for (const g of SOUND_ALIKE_GROUPS) {
@@ -310,6 +310,7 @@ function isEdge(pos: number, len: number): boolean {
 
 function subCost(x: string, y: string, atStart: boolean, lenient: boolean): number {
   if (x === y) return 0;
+  // ت/ه here only ever meet as a word's last letter (see edgeSubCost)
   // ض and ظ are one sound for nearly every reciter and every speech model
   if ((x === "ض" && y === "ظ") || (x === "ظ" && y === "ض")) return 0;
   if (lenient && SOUND_ALIKE.has(x + y)) return COST_ALIKE;
@@ -322,11 +323,19 @@ function subCost(x: string, y: string, atStart: boolean, lenient: boolean): numb
   return COST_HARD;
 }
 
+const FINAL_TA: Record<string, true> = { "ته": true, "هت": true };
+
 /** Cost of inserting/deleting w[pos]. */
 function indelCost(w: string, pos: number, lenient: boolean): number {
   const ch = w[pos];
   const len = w.length;
   const next = w[pos + 1];
+  if (lenient && pos > 0) {
+    // A pause breathed out after the last long vowel: أثاما heard أثاماه
+    if (ch === "ه" && pos === len - 1 && w[pos - 1] === ALIF) return COST_ALIKE;
+    // A consonant heard twice across a vowel: الزور heard الزرور
+    if (ch === w[pos - 2] || ch === w[pos + 2]) return COST_ALIKE;
+  }
   // The article's lam before a sun letter is never pronounced (زَيَّنَّا ٱلسَّمَآءَ =
   // zayyannas-samā'), so a transcript without it (سماء) is the same sound
   if (ch === LAM && w[pos - 1] === ALIF && pos <= 2 && next && SUN_LETTERS.has(next)) return COST_ALIKE;
@@ -344,6 +353,8 @@ function indelCost(w: string, pos: number, lenient: boolean): number {
 }
 
 function edgeSubCost(a: string, b: string, i: number, j: number, lenient: boolean): number {
+  // Open and closed ta at the end are one word (رحمت = رحمة, حسنت heard حسنة)
+  if (i === a.length - 1 && j === b.length - 1 && a[i] + b[j] in FINAL_TA) return COST_ALIKE;
   const s = subCost(a[i], b[j], i === 0 || j === 0, lenient);
   if (s <= COST_ALIF) return s; // spelling / sound-alike: no edge penalty
   return isEdge(i, a.length) || isEdge(j, b.length) ? s * EDGE_FACTOR : s;

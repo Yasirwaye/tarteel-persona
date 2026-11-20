@@ -247,6 +247,9 @@ export default function RecitationSession({ surah, variant = "practice" }: Props
         if (words.every((w) => w.status === "pending")) nav.requestJump(surah.id, found.fromAyah);
         return;
       }
+      // Already reciting here: a verse from another surah said by mistake (a
+      // similar verse slipped in) is not a move. Only a longer stretch there is.
+      if (words.some((w) => w.status === "correct") && found.span < 12) return;
       relocating.current = true;
       const startAyah = found.fromSurahId === found.surahId ? found.fromAyah : found.ayah;
       // Load the surah, its mushaf page (data + font) and the route first, then
