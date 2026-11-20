@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Mic, Play, Trash2, AlertTriangle, Flame } from "lucide-react";
+import { BookOpen, Mic, Play, Trash2, AlertTriangle, Flame, Download } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/hooks/useHydrated";
@@ -249,6 +249,18 @@ function RecordingPlayer({ id, sessionId }: { id: string; sessionId: string }) {
     setUrl(URL.createObjectURL(blob));
   };
 
+  // Save the audio as a file (to share a recitation the marking got wrong)
+  const download = async () => {
+    const blob = await getRecording(id).catch(() => null);
+    if (!blob) return setMissing(true);
+    const ext = blob.type.includes("mp4") ? "m4a" : blob.type.includes("webm") ? "webm" : blob.type.includes("ogg") ? "ogg" : "wav";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `recitation-${sessionId}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  };
+
   const remove = async () => {
     if (!window.confirm("Delete this recording?")) return;
     await deleteRecording(id).catch(() => {});
@@ -291,6 +303,9 @@ function RecordingPlayer({ id, sessionId }: { id: string; sessionId: string }) {
           Listen to recording
         </button>
       )}
+      <button onClick={download} className="p-2 text-surface-500 hover:text-emerald-300" aria-label="Download this recording">
+        <Download className="w-4 h-4" />
+      </button>
       <button onClick={remove} className="p-2 text-surface-500 hover:text-red-300" aria-label="Delete this recording">
         <Trash2 className="w-4 h-4" />
       </button>
